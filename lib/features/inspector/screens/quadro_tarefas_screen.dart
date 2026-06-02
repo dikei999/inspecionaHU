@@ -160,8 +160,14 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                             itemCount: _filtered.length,
                             separatorBuilder: (context, index) =>
                                 const SizedBox(height: 8),
-                            itemBuilder: (_, i) =>
-                                _TaskCard(task: _filtered[i]),
+                            itemBuilder: (ctx, i) => _TaskCard(
+                              task: _filtered[i],
+                              onTap: () async {
+                                await ctx.push(AppRoutes.responderChecklist(
+                                    _filtered[i].id));
+                                _load(); // recarrega após retornar
+                              },
+                            ),
                           ),
                   ),
                 ],
@@ -275,7 +281,8 @@ class _FilterChip extends StatelessWidget {
 
 class _TaskCard extends StatelessWidget {
   final Task task;
-  const _TaskCard({required this.task});
+  final VoidCallback? onTap;
+  const _TaskCard({required this.task, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -296,103 +303,115 @@ class _TaskCard extends StatelessWidget {
       statusLabel = 'Pendente';
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isOverdue
-              ? AppColors.nonCompliant.withValues(alpha: 0.4)
-              : AppColors.border,
-          width: isOverdue ? 1.0 : 0.5,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Tarefa #${task.id.substring(0, 8)}',
-                    style: Theme.of(context).textTheme.titleSmall,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: statusColor,
-                    ),
-                  ),
-                ),
-              ],
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isOverdue
+                  ? AppColors.nonCompliant.withValues(alpha: 0.4)
+                  : AppColors.border,
+              width: isOverdue ? 1.0 : 0.5,
             ),
-            const SizedBox(height: 10),
-            Row(
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  isOverdue
-                      ? Icons.schedule_outlined
-                      : Icons.calendar_today_outlined,
-                  size: 14,
-                  color: isOverdue
-                      ? AppColors.nonCompliant
-                      : isDueSoon
-                          ? AppColors.pending
-                          : AppColors.textSecondary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  AppDateUtils.formatDate(task.dueDate),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: isOverdue
-                            ? AppColors.nonCompliant
-                            : isDueSoon
-                                ? AppColors.pending
-                                : AppColors.textSecondary,
-                        fontWeight:
-                            isOverdue ? FontWeight.w600 : FontWeight.w400,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Tarefa #${task.id.substring(0, 8)}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        statusLabel,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: statusColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right,
+                        size: 16, color: AppColors.textSecondary),
+                  ],
                 ),
-                if (isOverdue) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    'ATRASADA',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.nonCompliant,
-                      letterSpacing: 0.5,
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      isOverdue
+                          ? Icons.schedule_outlined
+                          : Icons.calendar_today_outlined,
+                      size: 14,
+                      color: isOverdue
+                          ? AppColors.nonCompliant
+                          : isDueSoon
+                              ? AppColors.pending
+                              : AppColors.textSecondary,
                     ),
-                  ),
-                ] else if (isDueSoon) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    'Vence em breve',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.pending,
+                    const SizedBox(width: 4),
+                    Text(
+                      AppDateUtils.formatDate(task.dueDate),
+                      style:
+                          Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: isOverdue
+                                    ? AppColors.nonCompliant
+                                    : isDueSoon
+                                        ? AppColors.pending
+                                        : AppColors.textSecondary,
+                                fontWeight: isOverdue
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                              ),
                     ),
-                  ),
-                ],
+                    if (isOverdue) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        'ATRASADA',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.nonCompliant,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ] else if (isDueSoon) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        'Vence em breve',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.pending,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );

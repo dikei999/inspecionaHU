@@ -29,9 +29,13 @@ import '../features/director/screens/calendario_institucional_screen.dart';
 import '../features/director/screens/relatorio_individual_screen.dart';
 import '../features/director/screens/acesso_compartilhado_screen.dart';
 import '../features/director/screens/pedidos_acesso_screen.dart';
-// Supervisor / Inspetor (placeholders — Fases 5 e 6)
+// Supervisor
 import '../features/supervisor/screens/supervisor_dashboard_screen.dart';
+// Inspetor
 import '../features/inspector/screens/quadro_tarefas_screen.dart';
+import '../features/inspector/screens/historico_screen.dart';
+import '../features/inspector/screens/calendario_screen.dart';
+import '../features/inspector/screens/resposta_checklist_screen.dart';
 import 'routes.dart';
 import 'theme.dart';
 
@@ -260,21 +264,23 @@ class _AppState extends State<App> {
         builder: (context, state) => const SupervisorDashboardScreen(),
       ),
 
-      // ── Inspetor (Fase 6) ─────────────────────────────────────────────────
+      // ── Inspetor ──────────────────────────────────────────────────────────
       GoRoute(
         path: AppRoutes.inspectorDashboard,
         builder: (context, state) => const QuadroTarefasScreen(),
       ),
       GoRoute(
         path: AppRoutes.inspectorCalendario,
-        builder: (context, state) => const Scaffold(
-          body: Center(child: Text('Calendário do Inspetor — em desenvolvimento')),
-        ),
+        builder: (context, state) => const CalendarioScreen(),
       ),
       GoRoute(
         path: AppRoutes.inspectorHistorico,
-        builder: (context, state) => const Scaffold(
-          body: Center(child: Text('Histórico — em desenvolvimento')),
+        builder: (context, state) => const HistoricoScreen(),
+      ),
+      GoRoute(
+        path: '/inspector/tarefas/:taskId/responder',
+        builder: (context, state) => RespostaChecklistScreen(
+          taskId: state.pathParameters['taskId']!,
         ),
       ),
     ];

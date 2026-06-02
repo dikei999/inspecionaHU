@@ -48,6 +48,8 @@ class AppRoutes {
   static const inspectorDashboard = '/inspector';
   static const inspectorCalendario = '/inspector/calendario';
   static const inspectorHistorico = '/inspector/historico';
+  static String responderChecklist(String taskId) =>
+      '/inspector/tarefas/$taskId/responder';
 
   // Helper: retorna rota de dashboard para cada role
   static String dashboardForRole(String? role) {

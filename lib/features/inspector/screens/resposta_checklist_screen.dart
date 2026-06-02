@@ -1,43 +1,1343 @@
-import 'package:flutter/material.dart';
-import '../../../core/constants/app_strings.dart';
+import 'dart:io';
 
-/// Tela de resposta do checklist pelo Inspetor.
-/// Regras críticas (seção 6):
-/// - Câmera OBRIGATÓRIA — galeria BLOQUEADA
-/// - NC exige observação (bloqueia envio se ausente)
-/// - NC com requires_photo=true exige foto (bloqueia envio se ausente)
-/// - Salvamento automático a cada resposta
-/// - Botão "Salvar e sair" sempre visível
-class RespostaChecklistScreen extends StatelessWidget {
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
+import 'package:uuid/uuid.dart';
+
+import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_strings.dart';
+import '../../../core/models/checklist.dart';
+import '../../../core/models/checklist_item.dart';
+import '../../../core/models/inspection.dart';
+import '../../../core/models/task.dart';
+import '../../../core/services/audit_service.dart';
+import '../../../core/utils/app_date_utils.dart';
+import '../../auth/providers/auth_provider.dart';
+
+/// Estado local de uma resposta de item ainda não submetida.
+class _ItemState {
+  String? status; // 'C' | 'NC' | 'NA' | null
+  String observation;
+  String? photoLocalPath; // path local antes do upload
+  String? photoUrl; // URL após upload no Storage
+  DateTime? photoCapturedAt;
+  int? photoSizeKb;
+  bool uploading;
+  bool saving;
+
+  _ItemState({
+    this.status,
+    this.observation = '',
+    this.photoUrl,
+    this.photoCapturedAt,
+    this.photoSizeKb,
+  }) : photoLocalPath = null,
+       uploading = false,
+       saving = false;
+}
+
+class RespostaChecklistScreen extends StatefulWidget {
   final String taskId;
 
   const RespostaChecklistScreen({super.key, required this.taskId});
 
   @override
+  State<RespostaChecklistScreen> createState() =>
+      _RespostaChecklistScreenState();
+}
+
+class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
+  final _db = Supabase.instance.client;
+  final _uuid = const Uuid();
+  final _scrollCtrl = ScrollController();
+  final List<GlobalKey> _itemKeys = [];
+
+  // ── Estado de carregamento ─────────────────────────────────────────────────
+  bool _loadingInit = true;
+  bool _submitting = false;
+  String? _initError;
+
+  // ── Dados carregados ───────────────────────────────────────────────────────
+  Task? _task;
+  Checklist? _checklist;
+  List<ChecklistItem> _items = [];
+  Inspection? _inspection;
+  // checklistItemId -> _ItemState
+  final Map<String, _ItemState> _responses = {};
+
+  // ── Conectividade ──────────────────────────────────────────────────────────
+  bool _isOnline = true;
+  // respostas pendentes de sync quando offline
+  final List<Map<String, dynamic>> _pendingSync = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+    _watchConnectivity();
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── Inicialização ──────────────────────────────────────────────────────────
+
+  Future<void> _init() async {
+    setState(() {
+      _loadingInit = true;
+      _initError = null;
+    });
+
+    try {
+      // 1. Buscar a task
+      final taskData = await _db
+          .from('tasks')
+          .select()
+          .eq('id', widget.taskId)
+          .single();
+      _task = Task.fromJson(taskData);
+
+      // 2. Buscar o checklist
+      final clData = await _db
+          .from('checklists')
+          .select()
+          .eq('id', _task!.checklistId)
+          .single();
+      _checklist = Checklist.fromJson(clData);
+
+      // 3. Buscar itens do checklist
+      final itemsData = await _db
+          .from('checklist_items')
+          .select()
+          .eq('checklist_id', _task!.checklistId)
+          .eq('status', 'active')
+          .order('order_index');
+      _items = (itemsData as List)
+          .map((e) => ChecklistItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      // Inicializa chaves de scroll para cada item
+      _itemKeys.clear();
+      for (var _ in _items) {
+        _itemKeys.add(GlobalKey());
+      }
+
+      // 4. Verificar se já existe inspeção draft para esta task
+      final existingInsp = await _db
+          .from('inspections')
+          .select()
+          .eq('task_id', widget.taskId)
+          .eq('overall_status', 'draft')
+          .maybeSingle();
+
+      if (existingInsp != null) {
+        _inspection = Inspection.fromJson(existingInsp);
+        await _loadExistingResponses();
+      } else {
+        await _createInspection();
+      }
+
+      // 5. Marcar task como in_progress se estava pending
+      if (_task!.status == 'pending') {
+        await _db
+            .from('tasks')
+            .update({'status': 'in_progress'}).eq('id', widget.taskId);
+      }
+
+      // Inicializa _ItemState para itens sem resposta
+      for (final item in _items) {
+        _responses.putIfAbsent(item.id, () => _ItemState());
+      }
+
+      if (mounted) setState(() => _loadingInit = false);
+    } catch (e) {
+      debugPrint('[RespostaChecklist] _init erro: $e');
+      if (mounted) {
+        setState(() {
+          _initError = 'Erro ao carregar inspeção: $e';
+          _loadingInit = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _createInspection() async {
+    final profile = context.read<AuthProvider>().profile!;
+    final now = DateTime.now().toIso8601String();
+
+    final result = await _db.from('inspections').insert({
+      'task_id': _task!.id,
+      'checklist_id': _task!.checklistId,
+      'sector_id': _task!.sectorId,
+      'hospital_id': _task!.hospitalId,
+      'inspector_id': profile.id,
+      'overall_status': 'draft',
+      'started_at': now,
+      'created_at': now,
+    }).select().single();
+
+    _inspection = Inspection.fromJson(result);
+  }
+
+  Future<void> _loadExistingResponses() async {
+    final data = await _db
+        .from('inspection_responses')
+        .select()
+        .eq('inspection_id', _inspection!.id);
+
+    for (final r in data as List) {
+      final itemId = r['checklist_item_id'] as String;
+      _responses[itemId] = _ItemState(
+        status: r['status'] as String?,
+        observation: (r['observation'] as String?) ?? '',
+        photoUrl: r['photo_url'] as String?,
+        photoCapturedAt: r['photo_captured_at'] != null
+            ? DateTime.parse(r['photo_captured_at'] as String)
+            : null,
+        photoSizeKb: r['photo_size_kb'] as int?,
+      );
+    }
+  }
+
+  // ── Conectividade ──────────────────────────────────────────────────────────
+
+  void _watchConnectivity() {
+    Connectivity().onConnectivityChanged.listen((results) {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      final wasOffline = !_isOnline;
+      setState(() => _isOnline = online);
+
+      if (online && wasOffline && _pendingSync.isNotEmpty) {
+        _syncPending();
+      }
+    });
+
+    Connectivity().checkConnectivity().then((results) {
+      setState(() {
+        _isOnline = results.any((r) => r != ConnectivityResult.none);
+      });
+    });
+  }
+
+  Future<void> _syncPending() async {
+    final toSync = List<Map<String, dynamic>>.from(_pendingSync);
+    _pendingSync.clear();
+
+    for (final payload in toSync) {
+      try {
+        await _db.from('inspection_responses').upsert(
+          payload,
+          onConflict: 'inspection_id,checklist_item_id',
+        );
+      } catch (_) {
+        _pendingSync.add(payload); // re-enfileira se ainda falhar
+      }
+    }
+
+    if (mounted && toSync.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Dados sincronizados com sucesso.'),
+        backgroundColor: AppColors.compliant,
+      ));
+    }
+  }
+
+  // ── Auto-save ──────────────────────────────────────────────────────────────
+
+  Future<void> _saveResponse(String itemId) async {
+    if (_inspection == null) return;
+    final state = _responses[itemId];
+    if (state == null) return;
+
+    setState(() => state.saving = true);
+
+    final payload = {
+      'inspection_id': _inspection!.id,
+      'checklist_item_id': itemId,
+      'status': state.status,
+      'observation':
+          state.observation.trim().isEmpty ? null : state.observation.trim(),
+      'photo_url': state.photoUrl,
+      'photo_captured_at': state.photoCapturedAt?.toIso8601String(),
+      'photo_size_kb': state.photoSizeKb,
+      'answered_at': DateTime.now().toIso8601String(),
+    };
+
+    if (!_isOnline) {
+      _pendingSync.add(payload);
+      if (mounted) setState(() => state.saving = false);
+      return;
+    }
+
+    try {
+      await _db.from('inspection_responses').upsert(
+        payload,
+        onConflict: 'inspection_id,checklist_item_id',
+      );
+    } catch (e) {
+      debugPrint('[RespostaChecklist] _saveResponse erro: $e');
+      _pendingSync.add(payload);
+    } finally {
+      if (mounted) setState(() => state.saving = false);
+    }
+  }
+
+  // ── Foto ───────────────────────────────────────────────────────────────────
+
+  Future<void> _takePhoto(String itemId) async {
+    final state = _responses[itemId];
+    if (state == null || _inspection == null) return;
+
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.camera, // SOMENTE câmera — galeria bloqueada
+        imageQuality: 85,
+      );
+      if (picked == null || !mounted) return;
+
+      setState(() => state.uploading = true);
+
+      // Comprimir
+      final dir = await getTemporaryDirectory();
+      final targetPath = '${dir.path}/${_uuid.v4()}.jpg';
+
+      final compressed = await FlutterImageCompress.compressAndGetFile(
+        picked.path,
+        targetPath,
+        minWidth: 1280,
+        minHeight: 1280,
+        quality: 75,
+        format: CompressFormat.jpeg,
+      );
+
+      if (compressed == null || !mounted) {
+        setState(() => state.uploading = false);
+        return;
+      }
+
+      final compressedFile = File(compressed.path);
+      final sizeKb = (await compressedFile.length() / 1024).round();
+      final capturedAt = DateTime.now();
+
+      // Atualiza thumbnail local imediatamente
+      setState(() {
+        state.photoLocalPath = compressedFile.path;
+        state.photoCapturedAt = capturedAt;
+        state.photoSizeKb = sizeKb;
+      });
+
+      // Upload para Storage
+      final fileName = '${_uuid.v4()}.jpg';
+      final storagePath =
+          '${_task!.hospitalId}/${_inspection!.id}/$fileName';
+
+      await _db.storage
+          .from('inspection-photos')
+          .upload(storagePath, compressedFile);
+
+      // Gerar signed URL válida por 1h
+      final signedUrl = await _db.storage
+          .from('inspection-photos')
+          .createSignedUrl(storagePath, 3600);
+
+      if (!mounted) return;
+      setState(() {
+        state.photoUrl = signedUrl;
+        state.uploading = false;
+      });
+
+      await _saveResponse(itemId);
+    } catch (e) {
+      debugPrint('[RespostaChecklist] _takePhoto erro: $e');
+      if (mounted) {
+        setState(() => state.uploading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erro ao capturar foto: $e'),
+          backgroundColor: AppColors.nonCompliant,
+        ));
+      }
+    }
+  }
+
+  // ── Validação e envio ──────────────────────────────────────────────────────
+
+  Future<void> _submit() async {
+    if (_inspection == null) return;
+
+    // Valida que todos os itens foram respondidos
+    for (int i = 0; i < _items.length; i++) {
+      final item = _items[i];
+      final state = _responses[item.id];
+      if (state?.status == null) {
+        _scrollToItem(i);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Item ${i + 1} não foi respondido. Responda todos os itens antes de enviar.'),
+          backgroundColor: AppColors.nonCompliant,
+        ));
+        return;
+      }
+      if (state!.status == 'NC') {
+        if (state.observation.trim().isEmpty) {
+          _scrollToItem(i);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Item ${i + 1} (NC): ${AppStrings.errorNcRequiresObservation}'),
+            backgroundColor: AppColors.nonCompliant,
+          ));
+          return;
+        }
+        if (item.requiresPhoto && state.photoUrl == null) {
+          _scrollToItem(i);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('Item ${i + 1} (NC): ${AppStrings.errorNcRequiresPhoto}'),
+            backgroundColor: AppColors.nonCompliant,
+          ));
+          return;
+        }
+      }
+    }
+
+    // Confirmação
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Finalizar e enviar?'),
+        content: const Text(
+            'Após o envio, a inspeção não poderá ser editada. Deseja continuar?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Enviar')),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _submitting = true);
+
+    try {
+      final now = DateTime.now().toIso8601String();
+      final profile = context.read<AuthProvider>().profile!;
+
+      // Calcular métricas
+      int compliant = 0, nonCompliant = 0, notApplicable = 0;
+      for (final item in _items) {
+        final s = _responses[item.id]?.status;
+        if (s == 'C') compliant++;
+        if (s == 'NC') nonCompliant++;
+        if (s == 'NA') notApplicable++;
+      }
+      final total = _items.length;
+      final rate = total > 0 ? (compliant / total * 100) : 0.0;
+
+      // UPDATE inspection
+      await _db.from('inspections').update({
+        'overall_status': 'submitted',
+        'submitted_at': now,
+        'finished_at': now,
+      }).eq('id', _inspection!.id);
+
+      // UPDATE task
+      await _db
+          .from('tasks')
+          .update({'status': 'submitted'}).eq('id', widget.taskId);
+
+      // INSERT / UPSERT report
+      await _db.from('reports').upsert({
+        'inspection_id': _inspection!.id,
+        'checklist_id': _task!.checklistId,
+        'sector_id': _task!.sectorId,
+        'hospital_id': _task!.hospitalId,
+        'inspector_id': profile.id,
+        'total_items': total,
+        'compliant_items': compliant,
+        'non_compliant_items': nonCompliant,
+        'not_applicable_items': notApplicable,
+        'compliance_rate': rate,
+        'generated_at': now,
+      }, onConflict: 'inspection_id');
+
+      // Audit log
+      await AuditService.log(
+        userId: profile.id,
+        hospitalId: _task!.hospitalId,
+        action: 'inspection.submitted',
+        entityType: 'inspection',
+        entityId: _inspection!.id,
+        details: {
+          'total': total,
+          'compliant': compliant,
+          'non_compliant': nonCompliant,
+          'compliance_rate': rate.toStringAsFixed(1),
+        },
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Inspeção enviada com sucesso!'),
+          backgroundColor: AppColors.compliant,
+        ));
+        Navigator.of(context).pop(true); // volta para quadro de tarefas
+      }
+    } catch (e) {
+      debugPrint('[RespostaChecklist] _submit erro: $e');
+      if (mounted) {
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erro ao enviar inspeção: $e'),
+          backgroundColor: AppColors.nonCompliant,
+        ));
+      }
+    }
+  }
+
+  void _scrollToItem(int index) {
+    final key = _itemKeys[index];
+    final ctx = key.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
+          alignment: 0.1);
+    }
+  }
+
+  // ── Progresso ──────────────────────────────────────────────────────────────
+
+  int get _answeredCount =>
+      _responses.values.where((s) => s.status != null).length;
+
+  bool get _allAnswered => _answeredCount == _items.length;
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
+  @override
   Widget build(BuildContext context) {
+    if (_loadingInit) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Responder Checklist')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_initError != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Responder Checklist')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline,
+                    color: AppColors.nonCompliant, size: 48),
+                const SizedBox(height: 16),
+                Text(_initError!,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                    onPressed: _init, child: const Text('Tentar novamente')),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final isLocked = _inspection?.isLocked ?? false;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Responder Checklist'),
+        title: Text(_checklist?.title ?? 'Checklist'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              AppStrings.saveAndExit,
-              style: const TextStyle(color: Colors.white),
+            child: const Text('Salvar e sair'),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // ── Banner offline ────────────────────────────────────────────
+          if (!_isOnline)
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: AppColors.pending.withValues(alpha: 0.15),
+              child: Row(
+                children: [
+                  const Icon(Icons.wifi_off,
+                      color: AppColors.pending, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Sem conexão — salvando localmente',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.pending,
+                            fontWeight: FontWeight.w500,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // ── Banner validado (bloqueado) ───────────────────────────────
+          if (isLocked)
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: AppColors.compliant.withValues(alpha: 0.1),
+              child: Row(
+                children: [
+                  const Icon(Icons.verified,
+                      color: AppColors.compliant, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Inspeção validada — somente leitura',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.compliant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+
+          // ── Barra de progresso ────────────────────────────────────────
+          _ProgressBar(
+            answered: _answeredCount,
+            total: _items.length,
+          ),
+
+          // ── Itens do checklist ────────────────────────────────────────
+          Expanded(
+            child: ListView.separated(
+              controller: _scrollCtrl,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+              itemCount: _items.length,
+              separatorBuilder: (_, i) => const SizedBox(height: 12),
+              itemBuilder: (ctx, i) {
+                final item = _items[i];
+                final state =
+                    _responses.putIfAbsent(item.id, () => _ItemState());
+                return _ChecklistItemCard(
+                  key: _itemKeys[i],
+                  item: item,
+                  index: i,
+                  state: state,
+                  locked: isLocked,
+                  onStatusChanged: (s) {
+                    setState(() {
+                      state.status = s;
+                      // Limpar observação e foto se mudar de NC
+                      if (s != 'NC') {
+                        state.observation = '';
+                        // Mantém foto (pode ter sido tirada antes de mudar)
+                      }
+                    });
+                    _saveResponse(item.id);
+                  },
+                  onObservationChanged: (obs) {
+                    state.observation = obs;
+                    _saveResponse(item.id);
+                  },
+                  onTakePhoto: () => _takePhoto(item.id),
+                );
+              },
             ),
           ),
         ],
       ),
-      body: Center(
-        child: Text('Resposta do checklist (taskId: $taskId) — em desenvolvimento'),
-      ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ElevatedButton(
-          onPressed: null, // habilitado somente quando todos os itens obrigatórios respondidos
-          child: const Text(AppStrings.finishAndSend),
+
+      // ── Botão finalizar ───────────────────────────────────────────────
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: const Border(
+              top: BorderSide(color: AppColors.border, width: 0.5)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Progresso textual
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '$_answeredCount de ${_items.length} respondidos',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Text(
+                  _allAnswered ? 'Pronto para enviar' : 'Responda todos os itens',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _allAnswered
+                            ? AppColors.compliant
+                            : AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed:
+                    (_allAnswered && !isLocked && !_submitting) ? _submit : null,
+                child: _submitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Finalizar e enviar'),
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+// ── Barra de progresso ─────────────────────────────────────────────────────────
+
+class _ProgressBar extends StatelessWidget {
+  final int answered;
+  final int total;
+
+  const _ProgressBar({required this.answered, required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = total > 0 ? answered / total : 0.0;
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Progresso', style: Theme.of(context).textTheme.labelSmall),
+              Text('${(progress * 100).toStringAsFixed(0)}%',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      )),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: AppColors.border,
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(AppColors.primary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Card de item do checklist ───────────────────────────────────────────────────
+
+class _ChecklistItemCard extends StatefulWidget {
+  final ChecklistItem item;
+  final int index;
+  final _ItemState state;
+  final bool locked;
+  final ValueChanged<String?> onStatusChanged;
+  final ValueChanged<String> onObservationChanged;
+  final VoidCallback onTakePhoto;
+
+  const _ChecklistItemCard({
+    super.key,
+    required this.item,
+    required this.index,
+    required this.state,
+    required this.locked,
+    required this.onStatusChanged,
+    required this.onObservationChanged,
+    required this.onTakePhoto,
+  });
+
+  @override
+  State<_ChecklistItemCard> createState() => _ChecklistItemCardState();
+}
+
+class _ChecklistItemCardState extends State<_ChecklistItemCard> {
+  late final TextEditingController _obsCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _obsCtrl = TextEditingController(text: widget.state.observation);
+  }
+
+  @override
+  void dispose() {
+    _obsCtrl.dispose();
+    super.dispose();
+  }
+
+  Color get _cardBorderColor {
+    if (widget.state.status == 'NC') {
+      return AppColors.nonCompliant.withValues(alpha: 0.5);
+    }
+    if (widget.state.status == 'C') {
+      return AppColors.compliant.withValues(alpha: 0.3);
+    }
+    if (widget.state.status == 'NA') {
+      return AppColors.border;
+    }
+    return AppColors.border;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final state = widget.state;
+    final isNC = state.status == 'NC';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _cardBorderColor, width: 0.8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Cabeçalho ───────────────────────────────────────────────
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Número do item
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${widget.index + 1}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          // Badge crítico
+                          if (item.isCritical) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.nonCompliant
+                                    .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'CRÍTICO',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.nonCompliant,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          // Chip NR-32
+                          if (item.nr32Reference != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                item.nr32Reference!,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      if (item.isCritical || item.nr32Reference != null)
+                        const SizedBox(height: 6),
+                      Text(
+                        item.description,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.textPrimary,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Indicador de salvamento
+                if (state.saving)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child:
+                          CircularProgressIndicator(strokeWidth: 1.5),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // ── Botões C / NC / NA ───────────────────────────────────────
+            if (!widget.locked)
+              Row(
+                children: [
+                  _StatusButton(
+                    label: 'C',
+                    sublabel: 'Conforme',
+                    selected: state.status == 'C',
+                    color: AppColors.compliant,
+                    onTap: () => widget.onStatusChanged('C'),
+                  ),
+                  const SizedBox(width: 8),
+                  _StatusButton(
+                    label: 'NC',
+                    sublabel: 'Não Conforme',
+                    selected: state.status == 'NC',
+                    color: AppColors.nonCompliant,
+                    onTap: () => widget.onStatusChanged('NC'),
+                  ),
+                  const SizedBox(width: 8),
+                  _StatusButton(
+                    label: 'NA',
+                    sublabel: 'Não se aplica',
+                    selected: state.status == 'NA',
+                    color: AppColors.textSecondary,
+                    onTap: () => widget.onStatusChanged('NA'),
+                  ),
+                ],
+              )
+            else
+              // Modo leitura
+              _ReadonlyStatus(status: state.status),
+
+            // ── Observação (obrigatória se NC) ───────────────────────────
+            if (isNC || (widget.locked && state.observation.isNotEmpty)) ...[
+              const SizedBox(height: 12),
+              if (!widget.locked)
+                TextField(
+                  controller: _obsCtrl,
+                  maxLines: 3,
+                  onChanged: widget.onObservationChanged,
+                  decoration: InputDecoration(
+                    labelText: 'Observação (obrigatória)',
+                    hintText: AppStrings.observationHint,
+                    prefixIcon: const Icon(Icons.edit_note_outlined),
+                    errorText: isNC && state.observation.trim().isEmpty
+                        ? 'Observação obrigatória para itens NC'
+                        : null,
+                  ),
+                )
+              else
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: AppColors.border, width: 0.5),
+                  ),
+                  child: Text(
+                    state.observation,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+            ],
+
+            // ── Foto ──────────────────────────────────────────────────────
+            if (isNC || state.photoUrl != null || state.photoLocalPath != null) ...[
+              const SizedBox(height: 12),
+              _PhotoSection(
+                state: state,
+                requiresPhoto: item.requiresPhoto,
+                locked: widget.locked,
+                onTakePhoto: widget.onTakePhoto,
+              ),
+            ],
+
+            // ── Botão foto opcional (para C/NA) ───────────────────────────
+            if (!isNC &&
+                state.photoUrl == null &&
+                state.photoLocalPath == null &&
+                !widget.locked &&
+                state.status != null) ...[
+              const SizedBox(height: 10),
+              TextButton.icon(
+                onPressed: state.uploading ? null : widget.onTakePhoto,
+                icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                label: const Text('Adicionar foto (opcional)'),
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Botão de status C/NC/NA ────────────────────────────────────────────────────
+
+class _StatusButton extends StatelessWidget {
+  final String label;
+  final String sublabel;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _StatusButton({
+    required this.label,
+    required this.sublabel,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? color : color.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? color : color.withValues(alpha: 0.2),
+              width: selected ? 1.5 : 0.8,
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : color,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                sublabel,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.85)
+                      : color.withValues(alpha: 0.8),
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Status leitura ─────────────────────────────────────────────────────────────
+
+class _ReadonlyStatus extends StatelessWidget {
+  final String? status;
+  const _ReadonlyStatus({this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    Color color;
+    String label;
+    switch (status) {
+      case 'C':
+        color = AppColors.compliant;
+        label = 'Conforme';
+        break;
+      case 'NC':
+        color = AppColors.nonCompliant;
+        label = 'Não Conforme';
+        break;
+      case 'NA':
+        color = AppColors.textSecondary;
+        label = 'Não se aplica';
+        break;
+      default:
+        color = AppColors.textDisabled;
+        label = 'Não respondido';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            status == 'C'
+                ? Icons.check_circle_outlined
+                : status == 'NC'
+                    ? Icons.cancel_outlined
+                    : Icons.remove_circle_outline,
+            color: color,
+            size: 18,
+          ),
+          const SizedBox(width: 6),
+          Text(label,
+              style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Seção de foto ──────────────────────────────────────────────────────────────
+
+class _PhotoSection extends StatelessWidget {
+  final _ItemState state;
+  final bool requiresPhoto;
+  final bool locked;
+  final VoidCallback onTakePhoto;
+
+  const _PhotoSection({
+    required this.state,
+    required this.requiresPhoto,
+    required this.locked,
+    required this.onTakePhoto,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPhoto =
+        state.photoUrl != null || state.photoLocalPath != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.camera_alt_outlined,
+              size: 16,
+              color: requiresPhoto
+                  ? AppColors.nonCompliant
+                  : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              requiresPhoto ? 'Foto obrigatória' : 'Foto',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: requiresPhoto
+                        ? AppColors.nonCompliant
+                        : AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+            ),
+            if (requiresPhoto && !hasPhoto)
+              const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Icon(Icons.error_outline,
+                    size: 14, color: AppColors.nonCompliant),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        if (state.uploading)
+          Container(
+            height: 100,
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.border, width: 0.5),
+            ),
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(strokeWidth: 2),
+                  SizedBox(height: 8),
+                  Text('Enviando foto...', style: TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+          )
+        else if (hasPhoto)
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: state.photoLocalPath != null
+                    ? Image.file(
+                        File(state.photoLocalPath!),
+                        height: 160,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      )
+                    : Image.network(
+                        state.photoUrl!,
+                        height: 160,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, e, st) => Container(
+                          height: 160,
+                          color: AppColors.background,
+                          child: const Center(
+                            child: Icon(Icons.broken_image_outlined,
+                                color: AppColors.textDisabled),
+                          ),
+                        ),
+                      ),
+              ),
+              if (!locked)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: onTakePhoto,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(Icons.camera_alt,
+                          color: Colors.white, size: 16),
+                    ),
+                  ),
+                ),
+              if (state.photoCapturedAt != null)
+                Positioned(
+                  bottom: 8,
+                  left: 8,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      AppDateUtils.formatDateTime(state.photoCapturedAt!),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10),
+                    ),
+                  ),
+                ),
+            ],
+          )
+        else if (!locked)
+          GestureDetector(
+            onTap: onTakePhoto,
+            child: Container(
+              height: 80,
+              decoration: BoxDecoration(
+                color: requiresPhoto
+                    ? AppColors.nonCompliant.withValues(alpha: 0.05)
+                    : AppColors.background,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: requiresPhoto
+                      ? AppColors.nonCompliant.withValues(alpha: 0.4)
+                      : AppColors.border,
+                  width: requiresPhoto ? 1.0 : 0.5,
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.camera_alt_outlined,
+                        color: requiresPhoto
+                            ? AppColors.nonCompliant
+                            : AppColors.textSecondary,
+                        size: 24),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tirar foto',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: requiresPhoto
+                            ? AppColors.nonCompliant
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
