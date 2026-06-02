@@ -1,0 +1,38 @@
+import 'package:intl/intl.dart';
+
+class AppDateUtils {
+  AppDateUtils._();
+
+  static final _dateFormatter = DateFormat('dd/MM/yyyy', 'pt_BR');
+  static final _dateTimeFormatter = DateFormat('dd/MM/yyyy HH:mm', 'pt_BR');
+  static final _timeFormatter = DateFormat('HH:mm', 'pt_BR');
+  static final _monthYearFormatter = DateFormat('MMMM yyyy', 'pt_BR');
+
+  static String formatDate(DateTime date) => _dateFormatter.format(date);
+
+  static String formatDateTime(DateTime dateTime) =>
+      _dateTimeFormatter.format(dateTime);
+
+  static String formatTime(DateTime dateTime) => _timeFormatter.format(dateTime);
+
+  static String formatMonthYear(DateTime date) =>
+      _monthYearFormatter.format(date);
+
+  /// Verifica se uma tarefa está atrasada.
+  /// Regra: due_date < now() AND status NOT IN ('submitted', 'validated')
+  static bool isOverdue(DateTime dueDate, String status) {
+    if (status == 'submitted' || status == 'validated') return false;
+    return dueDate.isBefore(DateTime.now());
+  }
+
+  /// Verifica se o prazo está chegando (< 24h).
+  static bool isDueSoon(DateTime dueDate) {
+    final diff = dueDate.difference(DateTime.now());
+    return diff.isNegative == false && diff.inHours < 24;
+  }
+
+  static DateTime? parseDate(String? value) {
+    if (value == null) return null;
+    return DateTime.tryParse(value);
+  }
+}

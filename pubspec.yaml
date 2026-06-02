@@ -1,0 +1,65 @@
+name: inspecionahu
+description: "InspecionaHU — App de Gestão Integrada da Conformidade com a NR-32 para hospitais da Rede EBSERH."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Supabase — banco, auth e storage
+  supabase_flutter: ^2.8.4
+
+  # State management
+  provider: ^6.1.2
+
+  # Navegação
+  go_router: ^14.8.1
+
+  # Câmera e compressão de fotos
+  # Regra: apenas ImageSource.camera — galeria BLOQUEADA
+  # Exceção: foto de perfil permite câmera E galeria
+  camera: ^0.11.0+2
+  flutter_image_compress: ^2.3.0
+  image_picker: ^1.1.2
+
+  # Armazenamento offline local (SQLite via Drift)
+  drift: ^2.22.1
+  drift_flutter: ^0.2.2
+  sqlite3_flutter_libs: ^0.5.24
+
+  # Detecção de conectividade (offline sync)
+  connectivity_plus: ^6.1.1
+
+  # Caminhos de arquivo
+  path_provider: ^2.1.5
+
+  # Exportação de relatórios
+  pdf: ^3.11.1
+  excel: 4.0.6
+
+  # Notificações
+  flutter_local_notifications: ^18.0.1
+  firebase_core: ^3.12.1
+  firebase_messaging: ^15.2.5
+
+  # Utilitários
+  intl: ^0.20.1
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # Code generation (Drift offline)
+  build_runner: ^2.4.13
+  drift_dev: ^2.22.1
+
+flutter:
+  uses-material-design: true
