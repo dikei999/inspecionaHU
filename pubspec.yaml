@@ -51,6 +51,11 @@ dependencies:
   # Utilitários
   intl: ^0.20.1
   uuid: ^4.5.1
+  google_fonts: ^8.1.0
+  fl_chart: ^1.2.0
+  printing: ^5.14.3
+  share_plus: ^13.2.0
+  shimmer: ^3.0.0
 
 dev_dependencies:
   flutter_test:

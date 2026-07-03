@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/app_date_utils.dart';
+import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class CalendarioScreen extends StatefulWidget {
@@ -109,7 +110,7 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Calendário')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(itemCount: 4, itemHeight: 120)
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
@@ -237,6 +238,7 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border, width: 0.5),
+        boxShadow: AppShadows.card,
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),

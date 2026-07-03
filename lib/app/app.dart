@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../core/services/notification_service.dart';
 import '../features/auth/providers/auth_provider.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/cadastro_screen.dart';
@@ -48,18 +49,33 @@ class App extends StatefulWidget {
 
 class _AppState extends State<App> {
   late final AuthProvider _authProvider;
+  late final NotificationProvider _notificationProvider;
   late final GoRouter _router;
 
   @override
   void initState() {
     super.initState();
     _authProvider = AuthProvider();
+    _notificationProvider = NotificationProvider();
+    _authProvider.addListener(_syncNotificationService);
+    _syncNotificationService();
     _router = GoRouter(
       refreshListenable: _authProvider,
       initialLocation: AppRoutes.login,
       redirect: _redirect,
       routes: _buildRoutes(),
     );
+  }
+
+  /// Inicia o serviço de notificações após o login e encerra no logout.
+  void _syncNotificationService() {
+    final profile = _authProvider.profile;
+    if (_authProvider.status == AuthStatus.authenticated && profile != null) {
+      _notificationProvider.start(profile.id);
+    } else if (_authProvider.status == AuthStatus.unauthenticated &&
+        _notificationProvider.isActive) {
+      _notificationProvider.stop();
+    }
   }
 
   String? _redirect(BuildContext context, GoRouterState state) {
@@ -288,14 +304,20 @@ class _AppState extends State<App> {
 
   @override
   void dispose() {
+    _authProvider.removeListener(_syncNotificationService);
+    _notificationProvider.dispose();
     _authProvider.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<AuthProvider>.value(
-      value: _authProvider,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthProvider>.value(value: _authProvider),
+        ChangeNotifierProvider<NotificationProvider>.value(
+            value: _notificationProvider),
+      ],
       child: MaterialApp.router(
         title: 'InspecionaHU',
         theme: AppTheme.lightTheme,

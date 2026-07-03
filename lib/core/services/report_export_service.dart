@@ -1,0 +1,588 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:excel/excel.dart' as xls;
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
+
+import '../models/checklist_item.dart';
+import '../models/inspection.dart';
+import '../models/inspection_response.dart';
+
+/// Dados consolidados de um relatório de inspeção para exportação.
+class ReportExportData {
+  final Inspection inspection;
+  final List<InspectionResponse> responses;
+  final Map<String, ChecklistItem> items;
+  final String hospitalName;
+  final String sectorName;
+  final String checklistTitle;
+  final String inspectorName;
+
+  const ReportExportData({
+    required this.inspection,
+    required this.responses,
+    required this.items,
+    required this.hospitalName,
+    required this.sectorName,
+    required this.checklistTitle,
+    required this.inspectorName,
+  });
+
+  int get compliant => responses.where((r) => r.status == 'C').length;
+  int get nonCompliant => responses.where((r) => r.status == 'NC').length;
+  int get notApplicable => responses.where((r) => r.status == 'NA').length;
+
+  double get complianceRate {
+    final total = compliant + nonCompliant;
+    if (total == 0) return 0;
+    return compliant / total * 100;
+  }
+
+  /// Respostas ordenadas pelo order_index do item do checklist.
+  List<InspectionResponse> get orderedResponses {
+    final list = List<InspectionResponse>.from(responses);
+    list.sort((a, b) {
+      final ia = items[a.checklistItemId]?.orderIndex ?? 0;
+      final ib = items[b.checklistItemId]?.orderIndex ?? 0;
+      return ia.compareTo(ib);
+    });
+    return list;
+  }
+}
+
+/// Geração de PDF e Excel do relatório individual de inspeção.
+/// Fotos são baixadas via signed URL de 1h do bucket privado
+/// inspection-photos; falha em uma foto não impede a exportação.
+class ReportExportService {
+  ReportExportService._();
+
+  static final _db = Supabase.instance.client;
+  static const _bucket = 'inspection-photos';
+
+  static final _dateFmt = DateFormat('dd/MM/yyyy HH:mm', 'pt_BR');
+
+  // Cores da identidade visual no espaço do PDF
+  static final _pdfPrimary = PdfColor.fromInt(0xFF1A56DB);
+  static final _pdfCompliant = PdfColor.fromInt(0xFF16A34A);
+  static final _pdfNonCompliant = PdfColor.fromInt(0xFFDC2626);
+  static final _pdfGray = PdfColor.fromInt(0xFF6B7280);
+  static final _pdfLightGray = PdfColor.fromInt(0xFFF3F4F6);
+  static final _pdfBorder = PdfColor.fromInt(0xFFE5E7EB);
+
+  // ── Fotos: re-assinatura e download ─────────────────────────────────────────
+
+  /// Extrai o path do Storage a partir de uma signed URL salva
+  /// (formato .../object/sign/inspection-photos/{path}?token=...).
+  static String? storagePathFromPhotoUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final segments = uri.pathSegments;
+      final idx = segments.indexOf(_bucket);
+      if (idx == -1 || idx == segments.length - 1) return null;
+      return segments.sublist(idx + 1).join('/');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Gera uma signed URL nova (1h) a partir da URL salva — a original expira.
+  static Future<String?> freshSignedUrl(String storedUrl) async {
+    final path = storagePathFromPhotoUrl(storedUrl);
+    if (path == null) return null;
+    try {
+      return await _db.storage.from(_bucket).createSignedUrl(path, 3600);
+    } catch (e) {
+      debugPrint('[ReportExport] freshSignedUrl falhou: $e');
+      return null;
+    }
+  }
+
+  /// Baixa os bytes de uma foto via signed URL de 1h.
+  /// Retorna null em caso de falha (o PDF usa placeholder).
+  static Future<Uint8List?> _downloadPhoto(String storedUrl) async {
+    try {
+      final signedUrl = await freshSignedUrl(storedUrl);
+      if (signedUrl == null) return null;
+
+      final client = HttpClient();
+      try {
+        final request = await client.getUrl(Uri.parse(signedUrl));
+        final response = await request.close();
+        if (response.statusCode != 200) return null;
+        final builder = BytesBuilder(copy: false);
+        await for (final chunk in response) {
+          builder.add(chunk);
+        }
+        return builder.takeBytes();
+      } finally {
+        client.close(force: true);
+      }
+    } catch (e) {
+      debugPrint('[ReportExport] download foto falhou: $e');
+      return null;
+    }
+  }
+
+  // ── PDF ─────────────────────────────────────────────────────────────────────
+
+  static Future<Uint8List> buildPdf(ReportExportData data) async {
+    // Baixa as fotos das NCs antes de montar o documento
+    // (tratamento de erro individual: foto que falhar vira placeholder)
+    final ncResponses = data.orderedResponses
+        .where((r) => r.status == 'NC')
+        .toList();
+    final photoBytes = <String, Uint8List?>{};
+    for (final r in ncResponses) {
+      if (r.photoUrl != null) {
+        photoBytes[r.id] = await _downloadPhoto(r.photoUrl!);
+      }
+    }
+
+    final doc = pw.Document(
+      title: 'Relatório de Inspeção NR-32 — ${data.checklistTitle}',
+      author: 'InspecionaHU',
+    );
+
+    final generatedAt = _dateFmt.format(DateTime.now());
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.fromLTRB(36, 36, 36, 44),
+        header: (ctx) => _pdfHeader(data),
+        footer: (ctx) => _pdfFooter(ctx, generatedAt),
+        build: (ctx) => [
+          pw.SizedBox(height: 12),
+          _pdfMetadata(data),
+          pw.SizedBox(height: 14),
+          _pdfSummary(data),
+          pw.SizedBox(height: 18),
+          pw.Text('Itens inspecionados',
+              style: pw.TextStyle(
+                  fontSize: 13,
+                  fontWeight: pw.FontWeight.bold,
+                  color: _pdfPrimary)),
+          pw.SizedBox(height: 8),
+          _pdfItemsTable(data),
+          if (ncResponses.isNotEmpty) ...[
+            pw.SizedBox(height: 20),
+            pw.Text('Não conformidades',
+                style: pw.TextStyle(
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                    color: _pdfNonCompliant)),
+            pw.SizedBox(height: 8),
+            ...ncResponses.map((r) => _pdfNcBlock(data, r, photoBytes[r.id])),
+          ],
+        ],
+      ),
+    );
+
+    return doc.save();
+  }
+
+  static pw.Widget _pdfHeader(ReportExportData data) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.only(bottom: 10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border(bottom: pw.BorderSide(color: _pdfBorder, width: 1)),
+      ),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        children: [
+          // Ícone institucional simples
+          pw.Container(
+            width: 34,
+            height: 34,
+            alignment: pw.Alignment.center,
+            decoration: pw.BoxDecoration(
+              color: _pdfPrimary,
+              borderRadius: pw.BorderRadius.circular(8),
+            ),
+            child: pw.Text('HU',
+                style: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold)),
+          ),
+          pw.SizedBox(width: 10),
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(data.hospitalName,
+                    style: pw.TextStyle(
+                        fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                pw.Text('Relatório de Inspeção NR-32',
+                    style: pw.TextStyle(fontSize: 10, color: _pdfGray)),
+              ],
+            ),
+          ),
+          pw.Text('InspecionaHU',
+              style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: _pdfPrimary)),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _pdfFooter(pw.Context ctx, String generatedAt) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.only(top: 8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border(top: pw.BorderSide(color: _pdfBorder, width: 0.5)),
+      ),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text('Gerado em $generatedAt pelo InspecionaHU',
+              style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
+          pw.Text('Página ${ctx.pageNumber} de ${ctx.pagesCount}',
+              style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _pdfMetadata(ReportExportData data) {
+    final insp = data.inspection;
+    final rows = <List<String>>[
+      ['Checklist', data.checklistTitle],
+      ['Setor', data.sectorName],
+      ['Inspetor', data.inspectorName],
+      if (insp.startedAt != null)
+        ['Iniciada em', _dateFmt.format(insp.startedAt!)],
+      if (insp.submittedAt != null)
+        ['Enviada em', _dateFmt.format(insp.submittedAt!)],
+      if (insp.validatedAt != null)
+        ['Validada em', _dateFmt.format(insp.validatedAt!)],
+      [
+        'Status',
+        insp.isValidated
+            ? 'Validado'
+            : insp.isSubmitted
+                ? 'Enviado'
+                : 'Rascunho'
+      ],
+    ];
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        color: _pdfLightGray,
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Column(
+        children: rows
+            .map((r) => pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+                  child: pw.Row(
+                    children: [
+                      pw.SizedBox(
+                        width: 90,
+                        child: pw.Text(r[0],
+                            style:
+                                pw.TextStyle(fontSize: 9, color: _pdfGray)),
+                      ),
+                      pw.Expanded(
+                        child: pw.Text(r[1],
+                            style: pw.TextStyle(
+                                fontSize: 9,
+                                fontWeight: pw.FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ))
+            .toList(),
+      ),
+    );
+  }
+
+  static pw.Widget _pdfSummary(ReportExportData data) {
+    pw.Widget statBox(String label, String value, PdfColor color) {
+      return pw.Expanded(
+        child: pw.Container(
+          margin: const pw.EdgeInsets.symmetric(horizontal: 3),
+          padding: const pw.EdgeInsets.symmetric(vertical: 8),
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: color, width: 0.8),
+            borderRadius: pw.BorderRadius.circular(6),
+          ),
+          child: pw.Column(
+            children: [
+              pw.Text(value,
+                  style: pw.TextStyle(
+                      fontSize: 14,
+                      fontWeight: pw.FontWeight.bold,
+                      color: color)),
+              pw.SizedBox(height: 2),
+              pw.Text(label,
+                  style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final rateColor = data.complianceRate >= 80
+        ? _pdfCompliant
+        : data.complianceRate >= 60
+            ? PdfColor.fromInt(0xFFD97706)
+            : _pdfNonCompliant;
+
+    return pw.Row(
+      children: [
+        statBox('Taxa de conformidade',
+            '${data.complianceRate.toStringAsFixed(1)}%', rateColor),
+        statBox('Conformes', '${data.compliant}', _pdfCompliant),
+        statBox('Não conformes', '${data.nonCompliant}', _pdfNonCompliant),
+        statBox('Não se aplica', '${data.notApplicable}', _pdfGray),
+      ],
+    );
+  }
+
+  static pw.Widget _pdfItemsTable(ReportExportData data) {
+    PdfColor statusColor(String? s) => s == 'C'
+        ? _pdfCompliant
+        : s == 'NC'
+            ? _pdfNonCompliant
+            : _pdfGray;
+
+    final headerStyle = pw.TextStyle(
+        fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.white);
+    const cellStyle = pw.TextStyle(fontSize: 8.5);
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: _pdfBorder, width: 0.5),
+      columnWidths: {
+        0: const pw.FixedColumnWidth(24),
+        1: const pw.FlexColumnWidth(4),
+        2: const pw.FixedColumnWidth(34),
+        3: const pw.FixedColumnWidth(38),
+        4: const pw.FlexColumnWidth(3),
+      },
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _pdfPrimary),
+          children: ['Nº', 'Item', 'Status', 'Crítico', 'Observação']
+              .map((h) => pw.Padding(
+                    padding: const pw.EdgeInsets.all(4),
+                    child: pw.Text(h, style: headerStyle),
+                  ))
+              .toList(),
+        ),
+        ...data.orderedResponses.map((r) {
+          final item = data.items[r.checklistItemId];
+          return pw.TableRow(
+            children: [
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(4),
+                child: pw.Text('${item?.orderIndex ?? '—'}', style: cellStyle),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(4),
+                child: pw.Text(item?.description ?? 'Item removido',
+                    style: cellStyle),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(4),
+                child: pw.Text(r.status ?? '—',
+                    style: pw.TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: pw.FontWeight.bold,
+                        color: statusColor(r.status))),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(4),
+                child: pw.Text((item?.isCritical ?? false) ? 'Sim' : 'Não',
+                    style: pw.TextStyle(
+                        fontSize: 8.5,
+                        color: (item?.isCritical ?? false)
+                            ? _pdfNonCompliant
+                            : _pdfGray)),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(4),
+                child: pw.Text(r.observation ?? '', style: cellStyle),
+              ),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  static pw.Widget _pdfNcBlock(
+      ReportExportData data, InspectionResponse r, Uint8List? photo) {
+    final item = data.items[r.checklistItemId];
+    final isCritical = item?.isCritical ?? false;
+
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 10),
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(
+            color: _pdfNonCompliant, width: isCritical ? 1.4 : 0.8),
+        borderRadius: pw.BorderRadius.circular(6),
+        color: isCritical ? PdfColor.fromInt(0xFFFEF2F2) : PdfColors.white,
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Row(
+            children: [
+              if (isCritical)
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 5, vertical: 2),
+                  margin: const pw.EdgeInsets.only(right: 6),
+                  decoration: pw.BoxDecoration(
+                    color: _pdfNonCompliant,
+                    borderRadius: pw.BorderRadius.circular(3),
+                  ),
+                  child: pw.Text('NC CRÍTICA',
+                      style: pw.TextStyle(
+                          fontSize: 7,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white)),
+                ),
+              if (item?.nr32Reference != null)
+                pw.Text(item!.nr32Reference!,
+                    style: pw.TextStyle(fontSize: 8, color: _pdfPrimary)),
+            ],
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(item?.description ?? 'Item removido',
+              style:
+                  pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+          if (r.observation != null) ...[
+            pw.SizedBox(height: 4),
+            pw.Text('Observação: ${r.observation}',
+                style: const pw.TextStyle(fontSize: 9)),
+          ],
+          if (r.photoUrl != null) ...[
+            pw.SizedBox(height: 6),
+            if (photo != null)
+              pw.ClipRRect(
+                horizontalRadius: 4,
+                verticalRadius: 4,
+                child: pw.Image(
+                  pw.MemoryImage(photo),
+                  width: 220,
+                  height: 150,
+                  fit: pw.BoxFit.cover,
+                ),
+              )
+            else
+              pw.Container(
+                width: 220,
+                height: 40,
+                alignment: pw.Alignment.center,
+                decoration: pw.BoxDecoration(
+                  color: _pdfLightGray,
+                  borderRadius: pw.BorderRadius.circular(4),
+                ),
+                child: pw.Text('Foto indisponível',
+                    style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
+              ),
+            if (r.photoCapturedAt != null)
+              pw.Padding(
+                padding: const pw.EdgeInsets.only(top: 2),
+                child: pw.Text(
+                    'Foto capturada em ${_dateFmt.format(r.photoCapturedAt!)}',
+                    style: pw.TextStyle(fontSize: 7.5, color: _pdfGray)),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── Excel ───────────────────────────────────────────────────────────────────
+
+  /// Gera a planilha (abas Resumo e Itens) e salva em arquivo temporário.
+  /// Retorna o path do arquivo .xlsx pronto para compartilhar.
+  static Future<File> buildExcelFile(ReportExportData data) async {
+    final excel = xls.Excel.createExcel();
+
+    // ── Aba Resumo ────────────────────────────────────────────────────────
+    final resumo = excel['Resumo'];
+    void addResumoRow(String label, String value) {
+      resumo.appendRow([xls.TextCellValue(label), xls.TextCellValue(value)]);
+    }
+
+    addResumoRow('Relatório de Inspeção NR-32', '');
+    addResumoRow('Hospital', data.hospitalName);
+    addResumoRow('Checklist', data.checklistTitle);
+    addResumoRow('Setor', data.sectorName);
+    addResumoRow('Inspetor', data.inspectorName);
+    if (data.inspection.submittedAt != null) {
+      addResumoRow('Enviada em', _dateFmt.format(data.inspection.submittedAt!));
+    }
+    if (data.inspection.validatedAt != null) {
+      addResumoRow(
+          'Validada em', _dateFmt.format(data.inspection.validatedAt!));
+    }
+    addResumoRow(
+        'Status',
+        data.inspection.isValidated
+            ? 'Validado'
+            : data.inspection.isSubmitted
+                ? 'Enviado'
+                : 'Rascunho');
+    addResumoRow('', '');
+    addResumoRow(
+        'Taxa de conformidade', '${data.complianceRate.toStringAsFixed(1)}%');
+    addResumoRow('Itens conformes (C)', '${data.compliant}');
+    addResumoRow('Itens não conformes (NC)', '${data.nonCompliant}');
+    addResumoRow('Não se aplica (NA)', '${data.notApplicable}');
+    addResumoRow('Total de itens', '${data.responses.length}');
+    addResumoRow('', '');
+    addResumoRow('Gerado em', _dateFmt.format(DateTime.now()));
+    addResumoRow('Gerado por', 'InspecionaHU');
+
+    // ── Aba Itens ─────────────────────────────────────────────────────────
+    final itens = excel['Itens'];
+    itens.appendRow([
+      xls.TextCellValue('Nº'),
+      xls.TextCellValue('Item'),
+      xls.TextCellValue('Status'),
+      xls.TextCellValue('Crítico?'),
+      xls.TextCellValue('Observação'),
+      xls.TextCellValue('Possui foto?'),
+    ]);
+
+    for (final r in data.orderedResponses) {
+      final item = data.items[r.checklistItemId];
+      itens.appendRow([
+        xls.IntCellValue(item?.orderIndex ?? 0),
+        xls.TextCellValue(item?.description ?? 'Item removido'),
+        xls.TextCellValue(r.status ?? '—'),
+        xls.TextCellValue((item?.isCritical ?? false) ? 'Sim' : 'Não'),
+        xls.TextCellValue(r.observation ?? ''),
+        xls.TextCellValue(r.photoUrl != null ? 'Sim' : 'Não'),
+      ]);
+    }
+
+    // Remove a aba padrão criada automaticamente
+    excel.delete('Sheet1');
+
+    final bytes = excel.save();
+    if (bytes == null) {
+      throw Exception('Falha ao gerar a planilha.');
+    }
+
+    final dir = await getTemporaryDirectory();
+    final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+    final file = File('${dir.path}/relatorio_nr32_$stamp.xlsx');
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
+  }
+}

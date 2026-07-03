@@ -4,6 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/app_date_utils.dart';
+import '../../../widgets/charts.dart';
+import '../../../widgets/notification_bell.dart';
+import '../../../widgets/skeleton_loader.dart';
+import '../../../widgets/stat_card.dart';
 import '../../auth/providers/auth_provider.dart';
 
 /// Dashboard do Supervisor — mesma visão do Diretor com permissões restritas.
@@ -25,6 +30,13 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
   int _ncsAbertas = 0;
   int _setoresPendentes = 0;
 
+  // Agregados para os gráficos
+  int _totalCompliant = 0;
+  int _totalNonCompliant = 0;
+  int _totalNotApplicable = 0;
+  List<double> _inspecoesPorDia = List.filled(7, 0);
+  List<String> _diasLabels = List.filled(7, '');
+
   @override
   void initState() {
     super.initState();
@@ -40,14 +52,21 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
     try {
       final reports = await _db
           .from('reports')
-          .select('compliance_rate')
+          .select(
+              'compliance_rate, compliant_items, non_compliant_items, not_applicable_items')
           .eq('hospital_id', hospitalId);
 
       double conf = 0;
+      int sumC = 0, sumNc = 0, sumNa = 0;
       if (reports.isNotEmpty) {
         final sum = reports.fold<double>(
             0, (acc, r) => acc + (r['compliance_rate'] as num).toDouble());
         conf = sum / reports.length;
+        for (final r in reports) {
+          sumC += (r['compliant_items'] as num? ?? 0).toInt();
+          sumNc += (r['non_compliant_items'] as num? ?? 0).toInt();
+          sumNa += (r['not_applicable_items'] as num? ?? 0).toInt();
+        }
       }
 
       final today = DateTime.now();
@@ -59,6 +78,33 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           .eq('hospital_id', hospitalId)
           .gte('submitted_at', '${todayStr}T00:00:00')
           .lt('submitted_at', '${todayStr}T23:59:59');
+
+      // Inspeções enviadas nos últimos 7 dias (para o gráfico de barras)
+      final weekAgo = today.subtract(const Duration(days: 6));
+      final weekAgoStr =
+          '${weekAgo.year}-${weekAgo.month.toString().padLeft(2, '0')}-${weekAgo.day.toString().padLeft(2, '0')}';
+      final inspWeek = await _db
+          .from('inspections')
+          .select('submitted_at')
+          .eq('hospital_id', hospitalId)
+          .gte('submitted_at', '${weekAgoStr}T00:00:00');
+
+      final porDia = List<double>.filled(7, 0);
+      final labels = List<String>.filled(7, '');
+      const weekdayNames = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
+      for (int i = 0; i < 7; i++) {
+        final day = today.subtract(Duration(days: 6 - i));
+        labels[i] = weekdayNames[day.weekday - 1];
+      }
+      for (final insp in inspWeek) {
+        final submitted = AppDateUtils.parseDate(insp['submitted_at'] as String?);
+        if (submitted == null) continue;
+        final diff = DateTime(today.year, today.month, today.day)
+            .difference(
+                DateTime(submitted.year, submitted.month, submitted.day))
+            .inDays;
+        if (diff >= 0 && diff < 7) porDia[6 - diff] += 1;
+      }
 
       final openInspections = await _db
           .from('inspections')
@@ -92,6 +138,11 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           _inspecoesHoje = inspToday.length;
           _ncsAbertas = ncCount;
           _setoresPendentes = sectorIds;
+          _totalCompliant = sumC;
+          _totalNonCompliant = sumNc;
+          _totalNotApplicable = sumNa;
+          _inspecoesPorDia = porDia;
+          _diasLabels = labels;
           _loading = false;
         });
       }
@@ -115,7 +166,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
             const Text('Dashboard'),
             if (profile?.fullName != null)
               Text(
-                profile!.fullName.split(' ').first,
+                'Olá, ${profile!.fullName.split(' ').first}',
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
@@ -124,11 +175,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            tooltip: 'Notificações',
-            onPressed: () => context.push(AppRoutes.notificacoes),
-          ),
+          const NotificationBell(),
           IconButton(
             icon: const Icon(Icons.person_outline),
             tooltip: 'Perfil',
@@ -148,15 +195,12 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           children: [
             // ── Métricas ─────────────────────────────────────────────
             if (_loading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 32),
-                child: Center(child: CircularProgressIndicator()),
-              )
+              const SkeletonDashboard()
             else ...[
               Row(
                 children: [
                   Expanded(
-                    child: _MetricCard(
+                    child: StatCard(
                       label: 'Conformidade',
                       value: '${_conformidade.toStringAsFixed(1)}%',
                       icon: Icons.verified_outlined,
@@ -169,7 +213,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _MetricCard(
+                    child: StatCard(
                       label: 'Inspeções hoje',
                       value: _inspecoesHoje.toString(),
                       icon: Icons.today_outlined,
@@ -182,7 +226,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: _MetricCard(
+                    child: StatCard(
                       label: 'NCs abertas',
                       value: _ncsAbertas.toString(),
                       icon: Icons.warning_amber_outlined,
@@ -193,7 +237,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _MetricCard(
+                    child: StatCard(
                       label: 'Setores pendentes',
                       value: _setoresPendentes.toString(),
                       icon: Icons.domain_outlined,
@@ -203,6 +247,28 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Gráficos ────────────────────────────────────────────
+              ChartCard(
+                title: 'Conformidade geral',
+                subtitle: 'Itens respondidos em todas as inspeções',
+                child: ComplianceDonut(
+                  compliant: _totalCompliant,
+                  nonCompliant: _totalNonCompliant,
+                  notApplicable: _totalNotApplicable,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ChartCard(
+                title: 'Inspeções na semana',
+                subtitle: 'Enviadas nos últimos 7 dias',
+                child: SingleSeriesBarChart(
+                  values: _inspecoesPorDia,
+                  labels: _diasLabels,
+                  tooltipSuffix: ' inspeção(ões)',
+                ),
               ),
             ],
 
@@ -307,15 +373,16 @@ class _NavTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent,
       child: InkWell(
         onTap: item.onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
           decoration: BoxDecoration(
+            color: AppColors.surface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border, width: 0.5),
+            boxShadow: AppShadows.card,
           ),
           child: Stack(
             children: [
@@ -370,68 +437,6 @@ class _NavTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _MetricCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border, width: 0.5),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w700,
-                        height: 1,
-                      ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -7,6 +7,7 @@ class NotificationModel {
   //        access_request | access_approved | access_denied
   final String title;
   final String? body;
+  final String? referenceId; // id da entidade relacionada (task, inspection...)
   final bool read;
   final DateTime createdAt;
 
@@ -17,6 +18,7 @@ class NotificationModel {
     required this.type,
     required this.title,
     this.body,
+    this.referenceId,
     required this.read,
     required this.createdAt,
   });
@@ -29,6 +31,7 @@ class NotificationModel {
         type: json['type'] as String,
         title: json['title'] as String,
         body: json['body'] as String?,
+        referenceId: json['reference_id'] as String?,
         read: json['read'] as bool,
         createdAt: DateTime.parse(json['created_at'] as String),
       );
@@ -40,7 +43,20 @@ class NotificationModel {
         'type': type,
         'title': title,
         'body': body,
+        'reference_id': referenceId,
         'read': read,
         'created_at': createdAt.toIso8601String(),
       };
+
+  NotificationModel copyWith({bool? read}) => NotificationModel(
+        id: id,
+        userId: userId,
+        hospitalId: hospitalId,
+        type: type,
+        title: title,
+        body: body,
+        referenceId: referenceId,
+        read: read ?? this.read,
+        createdAt: createdAt,
+      );
 }

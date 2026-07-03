@@ -5,12 +5,14 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/checklist.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/models/sector.dart';
 import '../../../core/models/task.dart';
+import '../../../widgets/empty_state.dart';
+import '../../../widgets/skeleton_loader.dart';
+import '../../../widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class QuadroTarefasGestaoScreen extends StatefulWidget {
@@ -142,27 +144,6 @@ class _QuadroTarefasGestaoScreenState
     });
   }
 
-  Color _statusColor(Task task) {
-    if (task.isOverdue) return AppColors.statusOverdue;
-    switch (task.status) {
-      case 'pending':
-        return AppColors.statusPending;
-      case 'in_progress':
-        return AppColors.statusInProgress;
-      case 'submitted':
-        return AppColors.statusSubmitted;
-      case 'validated':
-        return AppColors.statusValidated;
-      default:
-        return AppColors.textSecondary;
-    }
-  }
-
-  String _statusLabel(Task task) {
-    if (task.isOverdue) return 'Atrasado';
-    return AppConstants.statusLabel(task.status);
-  }
-
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('dd/MM/yy');
@@ -186,12 +167,21 @@ class _QuadroTarefasGestaoScreenState
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(itemHeight: 96)
           : RefreshIndicator(
               onRefresh: _load,
               child: _filtered.isEmpty
-                  ? const Center(
-                      child: Text('Nenhuma tarefa encontrada.'))
+                  ? EmptyState(
+                      icon: Icons.view_kanban_outlined,
+                      title: 'Nenhuma tarefa encontrada',
+                      subtitle:
+                          'Ajuste os filtros ou atribua uma nova tarefa a um Inspetor.',
+                      actionLabel: 'Atribuir tarefa',
+                      onAction: () async {
+                        await context.push(AppRoutes.atribuirTarefa);
+                        _load();
+                      },
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.all(
                           AppDimensions.screenPadding),
@@ -199,7 +189,6 @@ class _QuadroTarefasGestaoScreenState
                       itemBuilder: (ctx, i) {
                         final tv = _filtered[i];
                         final task = tv.task;
-                        final color = _statusColor(task);
                         return Card(
                           child: InkWell(
                             borderRadius: BorderRadius.circular(
@@ -239,24 +228,10 @@ class _QuadroTarefasGestaoScreenState
                                               .titleMedium,
                                         ),
                                       ),
-                                      Container(
-                                        padding:
-                                            const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: color.withAlpha(30),
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                        child: Text(
-                                          _statusLabel(task),
-                                          style: TextStyle(
-                                              color: color,
-                                              fontSize: 12,
-                                              fontWeight:
-                                                  FontWeight.w600),
-                                        ),
+                                      StatusBadge(
+                                        status: task.isOverdue
+                                            ? 'overdue'
+                                            : task.status,
                                       ),
                                     ],
                                   ),

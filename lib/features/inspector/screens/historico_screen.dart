@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/app_date_utils.dart';
+import '../../../widgets/empty_state.dart';
+import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class HistoricoScreen extends StatefulWidget {
@@ -121,11 +123,15 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Histórico')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(itemHeight: 110)
           : RefreshIndicator(
               onRefresh: _load,
               child: _entries.isEmpty
-                  ? _buildEmptyState()
+                  ? const EmptyState(
+                      icon: Icons.history_toggle_off,
+                      title: 'Nenhuma inspeção enviada ainda',
+                      subtitle: 'Após enviar uma inspeção ela aparecerá aqui.',
+                    )
                   : ListView.separated(
                       padding: const EdgeInsets.all(16),
                       itemCount: _entries.length,
@@ -136,35 +142,6 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.history_toggle_off,
-                size: 64, color: AppColors.border),
-            const SizedBox(height: 16),
-            Text(
-              'Nenhuma inspeção enviada ainda',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(color: AppColors.textSecondary),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Após enviar uma inspeção ela aparecerá aqui.',
-              style: Theme.of(context).textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ── Modelo interno ────────────────────────────────────────────────────────────

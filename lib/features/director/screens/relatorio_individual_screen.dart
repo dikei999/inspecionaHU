@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
@@ -8,6 +10,9 @@ import '../../../core/models/checklist_item.dart';
 import '../../../core/models/inspection.dart';
 import '../../../core/models/inspection_response.dart';
 import '../../../core/services/audit_service.dart';
+import '../../../core/services/report_export_service.dart';
+import '../../../widgets/charts.dart';
+import '../../../widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class RelatorioIndividualScreen extends StatefulWidget {
@@ -26,6 +31,8 @@ class _RelatorioIndividualScreenState
 
   bool _loading = true;
   bool _validating = false;
+  bool _exportingPdf = false;
+  bool _exportingExcel = false;
 
   Inspection? _inspection;
   Map<String, ChecklistItem> _items = {};
@@ -33,6 +40,7 @@ class _RelatorioIndividualScreenState
   String? _inspectorName;
   String? _sectorName;
   String? _checklistTitle;
+  String? _hospitalName;
 
   int get _compliant =>
       _responses.where((r) => r.status == 'C').length;
@@ -40,11 +48,6 @@ class _RelatorioIndividualScreenState
       _responses.where((r) => r.status == 'NC').length;
   int get _notApplicable =>
       _responses.where((r) => r.status == 'NA').length;
-  double get _complianceRate {
-    final total = _compliant + _nonCompliant;
-    if (total == 0) return 0;
-    return (_compliant / total) * 100;
-  }
 
   @override
   void initState() {
@@ -103,21 +106,129 @@ class _RelatorioIndividualScreenState
           .eq('id', inspection.checklistId)
           .single();
 
+      // Nome do Hospital (cabeçalho institucional das exportações)
+      final hospitalData = await _db
+          .from('hospitals')
+          .select('name')
+          .eq('id', inspection.hospitalId)
+          .single();
+
+      // Ordena respostas pelo order_index do item
+      final responses =
+          responsesData.map(InspectionResponse.fromJson).toList()
+            ..sort((a, b) => (itemMap[a.checklistItemId]?.orderIndex ?? 0)
+                .compareTo(itemMap[b.checklistItemId]?.orderIndex ?? 0));
+
       if (mounted) {
         setState(() {
           _inspection = inspection;
-          _responses = responsesData.map(InspectionResponse.fromJson).toList();
+          _responses = responses;
           _items = itemMap;
           _inspectorName = inspProfile['full_name'] as String;
           _sectorName = sectorData['name'] as String;
           _checklistTitle = clData['title'] as String;
+          _hospitalName = hospitalData['name'] as String;
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      debugPrint('[RelatorioIndividual] erro: $e');
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Erro ao carregar o relatório. Tente novamente.'),
+          backgroundColor: AppColors.nonCompliant,
+        ));
+      }
     }
   }
+
+  ReportExportData get _exportData => ReportExportData(
+        inspection: _inspection!,
+        responses: _responses,
+        items: _items,
+        hospitalName: _hospitalName ?? 'Hospital Universitário',
+        sectorName: _sectorName ?? '—',
+        checklistTitle: _checklistTitle ?? '—',
+        inspectorName: _inspectorName ?? '—',
+      );
+
+  // ── Exportação PDF ──────────────────────────────────────────────────────────
+
+  Future<void> _exportPdf() async {
+    if (_exportingPdf || _inspection == null) return;
+    setState(() => _exportingPdf = true);
+
+    final profile = context.read<AuthProvider>().profile;
+    try {
+      final bytes = await ReportExportService.buildPdf(_exportData);
+      final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'relatorio_nr32_$stamp.pdf',
+      );
+
+      if (profile != null) {
+        await AuditService.log(
+          userId: profile.id,
+          hospitalId: _inspection!.hospitalId,
+          action: 'export_pdf',
+          entityType: 'inspection',
+          entityId: _inspection!.id,
+          details: {'checklist_title': _checklistTitle},
+        );
+      }
+    } catch (e) {
+      debugPrint('[RelatorioIndividual] export PDF erro: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Erro ao gerar o PDF. Tente novamente.'),
+          backgroundColor: AppColors.nonCompliant,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _exportingPdf = false);
+    }
+  }
+
+  // ── Exportação Excel ────────────────────────────────────────────────────────
+
+  Future<void> _exportExcel() async {
+    if (_exportingExcel || _inspection == null) return;
+    setState(() => _exportingExcel = true);
+
+    final profile = context.read<AuthProvider>().profile;
+    try {
+      final file = await ReportExportService.buildExcelFile(_exportData);
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path)],
+        text: 'Relatório de Inspeção NR-32 — $_checklistTitle',
+      ));
+
+      if (profile != null) {
+        await AuditService.log(
+          userId: profile.id,
+          hospitalId: _inspection!.hospitalId,
+          action: 'export_excel',
+          entityType: 'inspection',
+          entityId: _inspection!.id,
+          details: {'checklist_title': _checklistTitle},
+        );
+      }
+    } catch (e) {
+      debugPrint('[RelatorioIndividual] export Excel erro: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Erro ao gerar a planilha. Tente novamente.'),
+          backgroundColor: AppColors.nonCompliant,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _exportingExcel = false);
+    }
+  }
+
+  // ── Validação ───────────────────────────────────────────────────────────────
 
   Future<void> _validar() async {
     final confirm = await showDialog<bool>(
@@ -158,16 +269,8 @@ class _RelatorioIndividualScreenState
         'status': 'validated',
       }).eq('id', _inspection!.taskId);
 
-      // Notifica o Inspetor
-      await _db.from('notifications').insert({
-        'user_id': _inspection!.inspectorId,
-        'hospital_id': _inspection!.hospitalId,
-        'type': 'report_validated',
-        'title': 'Relatório validado',
-        'body':
-            'Seu relatório de "$_checklistTitle" foi validado por ${profile.fullName}.',
-        'read': false,
-      });
+      // A notificação ao Inspetor é gerada pelo trigger no banco
+      // (migration_notifications.sql) — fonte única, sem duplicar aqui.
 
       await AuditService.log(
         userId: profile.id,
@@ -213,11 +316,35 @@ class _RelatorioIndividualScreenState
 
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
     final inspection = _inspection!;
+    final ncResponses =
+        _responses.where((r) => r.status == 'NC').toList();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Relatório'),
         actions: [
+          // ── Exportar PDF ─────────────────────────────────────────────
+          IconButton(
+            tooltip: 'Exportar PDF',
+            onPressed: _exportingPdf ? null : _exportPdf,
+            icon: _exportingPdf
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.picture_as_pdf_outlined),
+          ),
+          // ── Exportar Excel ───────────────────────────────────────────
+          IconButton(
+            tooltip: 'Exportar Excel',
+            onPressed: _exportingExcel ? null : _exportExcel,
+            icon: _exportingExcel
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.table_view_outlined),
+          ),
           if (inspection.isSubmitted && !inspection.isValidated)
             Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -225,6 +352,7 @@ class _RelatorioIndividualScreenState
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.compliant,
                   foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 38),
                 ),
                 onPressed: _validating ? null : _validar,
                 icon: _validating
@@ -243,149 +371,113 @@ class _RelatorioIndividualScreenState
         padding: const EdgeInsets.all(AppDimensions.screenPadding),
         children: [
           // ── Cabeçalho ──────────────────────────────────────────────────
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _checklistTitle ?? '—',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  _InfoRow(label: 'Setor', value: _sectorName ?? '—'),
-                  _InfoRow(label: 'Inspetor', value: _inspectorName ?? '—'),
-                  if (inspection.submittedAt != null)
-                    _InfoRow(
-                      label: 'Enviado em',
-                      value: fmt.format(inspection.submittedAt!),
-                    ),
-                  if (inspection.isValidated && inspection.validatedAt != null)
-                    _InfoRow(
-                      label: 'Validado em',
-                      value: fmt.format(inspection.validatedAt!),
-                    ),
-                  const SizedBox(height: 8),
-                  // Status badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: inspection.isValidated
-                          ? AppColors.statusValidated.withAlpha(30)
-                          : AppColors.statusSubmitted.withAlpha(30),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      inspection.isValidated ? 'Validado' : 'Enviado',
-                      style: TextStyle(
-                        color: inspection.isValidated
-                            ? AppColors.statusValidated
-                            : AppColors.statusSubmitted,
-                        fontWeight: FontWeight.w600,
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.border, width: 0.5),
+              boxShadow: AppShadows.card,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _checklistTitle ?? '—',
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    StatusBadge(
+                        status: inspection.isValidated
+                            ? 'validated'
+                            : 'submitted'),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _InfoRow(label: 'Hospital', value: _hospitalName ?? '—'),
+                _InfoRow(label: 'Setor', value: _sectorName ?? '—'),
+                _InfoRow(label: 'Inspetor', value: _inspectorName ?? '—'),
+                if (inspection.submittedAt != null)
+                  _InfoRow(
+                    label: 'Enviado em',
+                    value: fmt.format(inspection.submittedAt!),
                   ),
-                ],
-              ),
+                if (inspection.isValidated && inspection.validatedAt != null)
+                  _InfoRow(
+                    label: 'Validado em',
+                    value: fmt.format(inspection.validatedAt!),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // ── Sumário de conformidade (anel) ──────────────────────────────
+          ChartCard(
+            title: 'Conformidade',
+            subtitle: 'Distribuição das respostas desta inspeção',
+            child: ComplianceDonut(
+              compliant: _compliant,
+              nonCompliant: _nonCompliant,
+              notApplicable: _notApplicable,
             ),
           ),
           const SizedBox(height: 16),
 
-          // ── Sumário de conformidade ─────────────────────────────────────
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Conformidade',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _ComplianceChip(
-                        label: 'C',
-                        count: _compliant,
-                        color: AppColors.compliant,
-                      ),
-                      const SizedBox(width: 8),
-                      _ComplianceChip(
-                        label: 'NC',
-                        count: _nonCompliant,
-                        color: AppColors.nonCompliant,
-                      ),
-                      const SizedBox(width: 8),
-                      _ComplianceChip(
-                        label: 'N/A',
-                        count: _notApplicable,
-                        color: AppColors.textSecondary,
-                      ),
-                      const Spacer(),
-                      Text(
-                        '${_complianceRate.toStringAsFixed(1)}%',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              color: _complianceRate >= 80
-                                  ? AppColors.compliant
-                                  : _complianceRate >= 60
-                                      ? AppColors.pending
-                                      : AppColors.nonCompliant,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+          // ── Não conformidades em destaque ───────────────────────────────
+          if (ncResponses.isNotEmpty) ...[
+            Row(
+              children: [
+                const Icon(Icons.report_gmailerrorred,
+                    size: 18, color: AppColors.nonCompliant),
+                const SizedBox(width: 6),
+                Text('Não conformidades',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: AppColors.nonCompliant,
+                        )),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            ...ncResponses.map((resp) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _NcCard(
+                    response: resp,
+                    item: _items[resp.checklistItemId],
+                  ),
+                )),
+            const SizedBox(height: 8),
+          ],
 
           // ── Respostas ──────────────────────────────────────────────────
-          Text('Respostas',
+          Text('Todos os itens',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
 
           ..._responses.map((resp) {
             final item = _items[resp.checklistItemId];
-            final isNc = resp.status == 'NC';
             final isCritical = item?.isCritical ?? false;
 
-            return Card(
-              child: Padding(
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
                 padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border, width: 0.5),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Status badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: resp.status == 'C'
-                                ? AppColors.compliant.withAlpha(30)
-                                : resp.status == 'NC'
-                                    ? AppColors.nonCompliant.withAlpha(30)
-                                    : AppColors.textSecondary.withAlpha(30),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            resp.status ?? '—',
-                            style: TextStyle(
-                              color: resp.status == 'C'
-                                  ? AppColors.compliant
-                                  : resp.status == 'NC'
-                                      ? AppColors.nonCompliant
-                                      : AppColors.textSecondary,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
+                        ResponseBadge(status: resp.status),
                         if (isCritical) ...[
                           const SizedBox(width: 6),
                           const Icon(Icons.warning_amber,
@@ -395,7 +487,8 @@ class _RelatorioIndividualScreenState
                         Expanded(
                           child: Text(
                             item?.description ?? 'Item removido',
-                            style: Theme.of(context).textTheme.bodyMedium,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: AppColors.textPrimary),
                           ),
                         ),
                       ],
@@ -410,47 +503,13 @@ class _RelatorioIndividualScreenState
                             ?.copyWith(color: AppColors.primary),
                       ),
                     ],
-                    if (isNc && resp.observation != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.nonCompliant.withAlpha(15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: AppColors.nonCompliant.withAlpha(60)),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.comment_outlined,
-                                size: 14, color: AppColors.nonCompliant),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                resp.observation!,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    if (resp.photoUrl != null) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(Icons.photo_outlined,
-                              size: 14, color: AppColors.primary),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Foto registrada${resp.photoCapturedAt != null ? " — ${DateFormat('dd/MM/yy HH:mm').format(resp.photoCapturedAt!)}" : ""}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: AppColors.primary),
-                          ),
-                        ],
+                    if (resp.status != 'NC' &&
+                        resp.observation != null &&
+                        resp.observation!.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        resp.observation!,
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
                   ],
@@ -483,38 +542,167 @@ class _InfoRow extends StatelessWidget {
           ),
           Expanded(
               child: Text(value,
-                  style: Theme.of(context).textTheme.bodyMedium)),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w500,
+                      ))),
         ],
       ),
     );
   }
 }
 
-class _ComplianceChip extends StatelessWidget {
-  final String label;
-  final int count;
-  final Color color;
-  const _ComplianceChip(
-      {required this.label, required this.count, required this.color});
+/// Card de não conformidade com observação e foto (signed URL re-gerada).
+class _NcCard extends StatelessWidget {
+  final InspectionResponse response;
+  final ChecklistItem? item;
+
+  const _NcCard({required this.response, this.item});
 
   @override
   Widget build(BuildContext context) {
+    final isCritical = item?.isCritical ?? false;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withAlpha(30),
-        borderRadius: BorderRadius.circular(8),
+        color: isCritical ? AppColors.nonCompliant50 : AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.nonCompliant
+              .withValues(alpha: isCritical ? 1.0 : 0.4),
+          width: isCritical ? 1.2 : 0.8,
+        ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13)),
-          const SizedBox(width: 6),
-          Text('$count',
-              style: TextStyle(color: color, fontSize: 13)),
+          if (isCritical) ...[
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.nonCompliant,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'NC CRÍTICA',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: 0.6,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Text(
+            item?.description ?? 'Item removido',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          if (item?.nr32Reference != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              item!.nr32Reference!,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppColors.primary),
+            ),
+          ],
+          if (response.observation != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: AppColors.nonCompliant.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.comment_outlined,
+                      size: 14, color: AppColors.nonCompliant),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      response.observation!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (response.photoUrl != null) ...[
+            const SizedBox(height: 8),
+            FutureBuilder<String?>(
+              future:
+                  ReportExportService.freshSignedUrl(response.photoUrl!),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Container(
+                    height: 140,
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  );
+                }
+                final url = snapshot.data;
+                if (url == null) {
+                  return Container(
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('Foto indisponível',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  );
+                }
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    url,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, e, st) => Container(
+                      height: 48,
+                      alignment: Alignment.center,
+                      color: AppColors.background,
+                      child: Text('Foto indisponível',
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ),
+                  ),
+                );
+              },
+            ),
+            if (response.photoCapturedAt != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Foto capturada em ${DateFormat('dd/MM/yy HH:mm').format(response.photoCapturedAt!)}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+          ],
         ],
       ),
     );

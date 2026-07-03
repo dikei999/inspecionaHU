@@ -6,7 +6,22 @@ import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/app_date_utils.dart';
+import '../../../widgets/empty_state.dart';
+import '../../../widgets/notification_bell.dart';
+import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
+
+/// Task + dados de exibição (título do checklist e nome do setor).
+class _TaskView {
+  final Task task;
+  final String checklistTitle;
+  final String sectorName;
+  const _TaskView({
+    required this.task,
+    required this.checklistTitle,
+    required this.sectorName,
+  });
+}
 
 class QuadroTarefasScreen extends StatefulWidget {
   const QuadroTarefasScreen({super.key});
@@ -19,7 +34,7 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
   final _db = Supabase.instance.client;
 
   bool _loading = true;
-  List<Task> _tasks = [];
+  List<_TaskView> _tasks = [];
   String _filter = 'all';
 
   @override
@@ -36,33 +51,50 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
     try {
       final data = await _db
           .from('tasks')
-          .select()
+          .select('*, checklists(title), sectors(name)')
           .eq('inspector_id', uid)
           .inFilter('status', ['pending', 'in_progress'])
           .order('due_date');
 
       if (mounted) {
         setState(() {
-          _tasks = data.map(Task.fromJson).toList();
+          _tasks = (data as List).map((e) {
+            final map = e as Map<String, dynamic>;
+            return _TaskView(
+              task: Task.fromJson(map),
+              checklistTitle: (map['checklists']
+                      as Map<String, dynamic>?)?['title'] as String? ??
+                  'Checklist',
+              sectorName: (map['sectors'] as Map<String, dynamic>?)?['name']
+                      as String? ??
+                  'Setor',
+            );
+          }).toList();
           _loading = false;
         });
       }
     } catch (e) {
       debugPrint('[QuadroTarefas] erro: $e');
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Erro ao carregar tarefas. Tente novamente.'),
+          backgroundColor: AppColors.nonCompliant,
+        ));
+      }
     }
   }
 
-  List<Task> get _filtered {
-    return _tasks.where((t) {
-      if (_filter == 'overdue') return t.isOverdue;
-      if (_filter == 'in_progress') return t.status == 'in_progress';
-      if (_filter == 'pending') return t.status == 'pending';
+  List<_TaskView> get _filtered {
+    return _tasks.where((tv) {
+      if (_filter == 'overdue') return tv.task.isOverdue;
+      if (_filter == 'in_progress') return tv.task.status == 'in_progress';
+      if (_filter == 'pending') return tv.task.status == 'pending';
       return true;
     }).toList();
   }
 
-  int get _overdueCount => _tasks.where((t) => t.isOverdue).length;
+  int get _overdueCount => _tasks.where((tv) => tv.task.isOverdue).length;
 
   @override
   Widget build(BuildContext context) {
@@ -81,11 +113,7 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
             tooltip: 'Histórico',
             onPressed: () => context.push(AppRoutes.inspectorHistorico),
           ),
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            tooltip: 'Notificações',
-            onPressed: () => context.push(AppRoutes.notificacoes),
-          ),
+          const NotificationBell(),
           IconButton(
             icon: const Icon(Icons.person_outline),
             tooltip: 'Perfil',
@@ -96,7 +124,7 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const SkeletonList(itemHeight: 96)
             : Column(
                 children: [
                   // ── Filtros ──────────────────────────────────────────
@@ -117,7 +145,7 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                             _FilterChip(
                               label: 'Em andamento',
                               count: _tasks
-                                  .where((t) => t.status == 'in_progress')
+                                  .where((t) => t.task.status == 'in_progress')
                                   .length,
                               selected: _filter == 'in_progress',
                               color: AppColors.primary,
@@ -128,7 +156,7 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                             _FilterChip(
                               label: 'Pendentes',
                               count: _tasks
-                                  .where((t) => t.status == 'pending')
+                                  .where((t) => t.task.status == 'pending')
                                   .length,
                               selected: _filter == 'pending',
                               color: AppColors.pending,
@@ -154,17 +182,25 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                   // ── Lista ou empty state ─────────────────────────────
                   Expanded(
                     child: _filtered.isEmpty
-                        ? _buildEmptyState()
+                        ? EmptyState(
+                            icon: Icons.task_alt,
+                            title: _filter == 'all'
+                                ? 'Nenhuma tarefa atribuída'
+                                : 'Nenhuma tarefa nesta categoria',
+                            subtitle: _filter == 'all'
+                                ? 'Quando um Supervisor ou Diretor atribuir uma tarefa, ela aparecerá aqui.'
+                                : 'Toque em "Todas" para ver todas as tarefas.',
+                          )
                         : ListView.separated(
                             padding: const EdgeInsets.all(16),
                             itemCount: _filtered.length,
                             separatorBuilder: (context, index) =>
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 10),
                             itemBuilder: (ctx, i) => _TaskCard(
-                              task: _filtered[i],
+                              taskView: _filtered[i],
                               onTap: () async {
                                 await ctx.push(AppRoutes.responderChecklist(
-                                    _filtered[i].id));
+                                    _filtered[i].task.id));
                                 _load(); // recarrega após retornar
                               },
                             ),
@@ -172,39 +208,6 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                   ),
                 ],
               ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.task_alt, size: 64, color: AppColors.border),
-            const SizedBox(height: 16),
-            Text(
-              _filter == 'all'
-                  ? 'Nenhuma tarefa atribuída'
-                  : 'Nenhuma tarefa nesta categoria',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(color: AppColors.textSecondary),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _filter == 'all'
-                  ? 'Quando um Supervisor ou Diretor atribuir uma tarefa, ela aparecerá aqui.'
-                  : 'Toque em "Todas" para ver todas as tarefas.',
-              style: Theme.of(context).textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -280,15 +283,15 @@ class _FilterChip extends StatelessWidget {
 }
 
 class _TaskCard extends StatelessWidget {
-  final Task task;
+  final _TaskView taskView;
   final VoidCallback? onTap;
-  const _TaskCard({required this.task, this.onTap});
+  const _TaskCard({required this.taskView, this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final task = taskView.task;
     final isOverdue = task.isOverdue;
-    final isDueSoon = !isOverdue &&
-        AppDateUtils.isDueSoon(task.dueDate);
+    final isDueSoon = !isOverdue && AppDateUtils.isDueSoon(task.dueDate);
 
     Color statusColor;
     String statusLabel;
@@ -304,13 +307,13 @@ class _TaskCard extends StatelessWidget {
     }
 
     return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
           decoration: BoxDecoration(
+            color: isOverdue ? AppColors.nonCompliant50 : AppColors.surface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isOverdue
@@ -318,97 +321,132 @@ class _TaskCard extends StatelessWidget {
                   : AppColors.border,
               width: isOverdue ? 1.0 : 0.5,
             ),
+            boxShadow: AppShadows.card,
           ),
           child: Padding(
             padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Tarefa #${task.id.substring(0, 8)}',
-                        style: Theme.of(context).textTheme.titleSmall,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        statusLabel,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: statusColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right,
-                        size: 16, color: AppColors.textSecondary),
-                  ],
+                // Barra lateral de status
+                Container(
+                  width: 4,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Icon(
-                      isOverdue
-                          ? Icons.schedule_outlined
-                          : Icons.calendar_today_outlined,
-                      size: 14,
-                      color: isOverdue
-                          ? AppColors.nonCompliant
-                          : isDueSoon
-                              ? AppColors.pending
-                              : AppColors.textSecondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      AppDateUtils.formatDate(task.dueDate),
-                      style:
-                          Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: isOverdue
-                                    ? AppColors.nonCompliant
-                                    : isDueSoon
-                                        ? AppColors.pending
-                                        : AppColors.textSecondary,
-                                fontWeight: isOverdue
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              taskView.checklistTitle,
+                              style: Theme.of(context).textTheme.titleSmall,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: statusColor,
                               ),
-                    ),
-                    if (isOverdue) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        'ATRASADA',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.nonCompliant,
-                          letterSpacing: 0.5,
-                        ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ] else if (isDueSoon) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        'Vence em breve',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.pending,
-                        ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.domain_outlined,
+                              size: 13, color: AppColors.textSecondary),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              taskView.sectorName,
+                              style: Theme.of(context).textTheme.bodySmall,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            isOverdue
+                                ? Icons.schedule_outlined
+                                : Icons.calendar_today_outlined,
+                            size: 13,
+                            color: isOverdue
+                                ? AppColors.nonCompliant
+                                : isDueSoon
+                                    ? AppColors.pending
+                                    : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            AppDateUtils.formatDate(task.dueDate),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: isOverdue
+                                      ? AppColors.nonCompliant
+                                      : isDueSoon
+                                          ? AppColors.pending
+                                          : AppColors.textSecondary,
+                                  fontWeight: isOverdue
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                ),
+                          ),
+                          if (isOverdue) ...[
+                            const SizedBox(width: 8),
+                            const Text(
+                              'ATRASADA',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.nonCompliant,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ] else if (isDueSoon) ...[
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Vence em breve',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.pending,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
-                  ],
+                  ),
                 ),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right,
+                    size: 18, color: AppColors.textSecondary),
               ],
             ),
           ),

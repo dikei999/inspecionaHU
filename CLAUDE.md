@@ -65,7 +65,12 @@ task_due_soon (24h antes) → Inspetor push | task_overdue → Inspetor push | d
 ## TEMPLATES NR-32
 Globais (Super Admin, hospital_id=NULL) + Locais (Diretor, hospital_id=X). Criar checklist "do zero" ou "usar template" → COPIA itens. Original intacto.
 
-## STATUS DESENVOLVIMENTO
+## STATUS DESENVOLVIMENTO — Estado atual (jul/2026)
 ✅ Fase 1-2: Supabase configurado, tabelas+RLS, Flutter setup, auth, cadastro, login, aguardo, roteamento
-🔧 Fase 3-4: Super Admin e Diretor (parcialmente implementados — bug na criação de setor)
-⬜ Fase 5-8: Supervisor, Inspetor, Relatórios, Notificações, Offline, Testes
+✅ Fase 3-5: Painéis Super Admin, Diretor, Supervisor e Inspetor funcionais (checklist com câmera, C/NC/NA, calendários, histórico, perfil)
+✅ Redesign visual: Inter (google_fonts), AppColors com escala tonal + AppShadows, widgets reutilizáveis em lib/widgets/ (StatCard, StatusBadge/ResponseBadge, EmptyState, SkeletonLoader, AppLogo, NotificationBell, charts), login hero com gradiente, dashboards com fl_chart (donut de conformidade + barras semanais), transições fade-forward
+✅ Exportação: lib/core/services/report_export_service.dart — PDF (pdf+printing, fotos via signed URL re-gerada, NC crítica em destaque) e Excel (abas Resumo/Itens, share_plus); botões na relatorio_individual_screen; audit_log export_pdf/export_excel
+✅ Notificações in-app: NotificationProvider (lib/core/services/notification_service.dart) — Supabase Realtime + flutter_local_notifications + badge no sino; notificacoes_screen real (marcar lida/todas, navegação contextual por reference_id); inicia no login, encerra no logout
+⚠️ migration_notifications.sql (raiz): PRECISA ser executada no SQL Editor — triggers (report_validated agora vem SÓ do trigger, o app não insere mais ao validar) + pg_cron (due_soon/overdue/draft_reminder) + coluna notifications.reference_id + Realtime publication
+🔧 FCM: scaffold pronto atrás de FirebaseConfig.enabled (false até configurar) — passo a passo em docs/FIREBASE_SETUP.md; plugin google-services NÃO aplicado no Gradle de propósito
+⬜ Offline real (Drift é STUB — offline_sync_service.dart); auto-save atual com retry+backoff, fila de reenvio e indicador salvando/salvo/erro; Testes
