@@ -9,6 +9,7 @@ import '../../../core/models/profile.dart';
 import '../../../core/models/sector.dart';
 import '../../../core/services/invitation_service.dart';
 import '../../../core/utils/cpf_utils.dart';
+import '../../../core/utils/upper_case_text_formatter.dart';
 import '../../auth/providers/auth_provider.dart';
 
 /// Tela única de convite para Diretor e Supervisor.
@@ -349,18 +350,6 @@ class _ConvidarUsuarioScreenState extends State<ConvidarUsuarioScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Converte o texto digitado para maiúsculas.
-class UpperCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    return TextEditingValue(
-      text: newValue.text.toUpperCase(),
-      selection: newValue.selection,
     );
   }
 }

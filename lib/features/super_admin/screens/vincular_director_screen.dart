@@ -7,6 +7,7 @@ import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/hospital.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/services/invitation_service.dart';
+import '../../../core/utils/upper_case_text_formatter.dart';
 
 /// Convida um usuário para ser Diretor de um hospital (Super Admin).
 /// Envia convite via RPC send_director_invitation — o usuário precisa aceitar.
@@ -249,18 +250,6 @@ class _VincularDirectorScreenState extends State<VincularDirectorScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Converte o texto digitado para maiúsculas.
-class UpperCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    return TextEditingValue(
-      text: newValue.text.toUpperCase(),
-      selection: newValue.selection,
     );
   }
 }

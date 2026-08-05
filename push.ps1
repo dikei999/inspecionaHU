@@ -1,3 +1,3 @@
 git add -A
-git commit -m "fix: reescrita da tela Convidar Diretor - corrige tela em branco"
+git commit -m "fix: resolve conflito de UpperCaseTextFormatter duplicado"
 git push
