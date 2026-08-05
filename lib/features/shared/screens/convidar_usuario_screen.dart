@@ -148,7 +148,7 @@ class _ConvidarUsuarioScreenState extends State<ConvidarUsuarioScreen> {
     setState(() => _sending = true);
     try {
       await InvitationService.sendInvitation(
-        inviteeCode: _codeCtrl.text,
+        inviteeCode: _codeCtrl.text.trim(),
         role: _role,
         sectorIds: List<String>.from(_selectedSectorIds),
         message: _msgCtrl.text.trim().isEmpty ? null : _msgCtrl.text.trim(),
@@ -174,9 +174,8 @@ class _ConvidarUsuarioScreenState extends State<ConvidarUsuarioScreen> {
 
   bool get _canSend {
     if (_found == null || _sending) return false;
-    // Supervisor (novo) precisa de ao menos 1 setor (o primeiro vira dono).
-    if (_role == 'supervisor' && _selectedSectorIds.isEmpty) return false;
-    if (_role == 'inspector' && _selectedSectorIds.isEmpty) return false;
+    // Supervisor e Inspetor precisam de ao menos 1 setor.
+    if (_selectedSectorIds.isEmpty) return false;
     return true;
   }
 
@@ -193,189 +192,175 @@ class _ConvidarUsuarioScreenState extends State<ConvidarUsuarioScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Convidar usuário')),
-      body: ListView(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppDimensions.screenPadding),
-        children: [
-          // ── Campo código ────────────────────────────────────────────────
-          Text('Código de perfil',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _codeCtrl,
-                  textCapitalization: TextCapitalization.characters,
-                  inputFormatters: [_ProfileCodeFormatter()],
-                  decoration: const InputDecoration(
-                    labelText: 'Código',
-                    hintText: '#ABC123',
-                    prefixIcon: Icon(Icons.tag),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Código de perfil ──────────────────────────────────────────
+            const Text('Código de perfil',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _codeCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    maxLength: 6,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp('[A-Za-z0-9]')),
+                      UpperCaseTextFormatter(),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: 'Código',
+                      hintText: 'ABC123',
+                      prefixIcon: Icon(Icons.tag),
+                      counterText: '',
+                    ),
+                    onSubmitted: (_) => _buscar(),
                   ),
-                  onSubmitted: (_) => _buscar(),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: _searching ? null : _buscar,
+                    child: _searching
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Buscar'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // ── Preview do usuário ────────────────────────────────────────
+            if (_found != null) ...[
+              Card(
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: AppColors.primary,
+                    child: Icon(Icons.person, color: Colors.white),
+                  ),
+                  title: Text(_found!.fullName),
+                  subtitle: Text(
+                      '${_found!.email}\n${CpfUtils.mask(_found!.cpf)}'),
+                  isThreeLine: true,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(height: 20),
+
+              // ── Cargo ─────────────────────────────────────────────────
+              const Text('Cargo',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _role,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+                items: roleOptions,
+                onChanged: (v) => setState(() => _role = v ?? 'inspector'),
+              ),
+              const SizedBox(height: 20),
+
+              // ── Setores ───────────────────────────────────────────────
+              Text(
+                _role == 'supervisor' ? 'Setores (o 1º vira dono)' : 'Setores',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              if (_loadingSectors)
+                const Center(child: CircularProgressIndicator())
+              else if (_sectors.isEmpty)
+                const Text(
+                  'Nenhum setor disponível.',
+                  style: TextStyle(color: AppColors.pending),
+                )
+              else
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.border, width: 0.5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    children: _sectors.map((s) {
+                      final selected = _selectedSectorIds.contains(s.id);
+                      final orderIdx = _selectedSectorIds.indexOf(s.id);
+                      return CheckboxListTile(
+                        title: Text(s.name),
+                        subtitle: (_role == 'supervisor' && orderIdx == 0)
+                            ? const Text('Será o setor dono',
+                                style: TextStyle(color: AppColors.primary))
+                            : null,
+                        value: selected,
+                        onChanged: (v) {
+                          setState(() {
+                            if (v == true) {
+                              _selectedSectorIds.add(s.id);
+                            } else {
+                              _selectedSectorIds.remove(s.id);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+              const SizedBox(height: 20),
+
+              // ── Mensagem ──────────────────────────────────────────────
+              const Text('Mensagem (opcional)',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _msgCtrl,
+                maxLength: 500,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Escreva uma mensagem para o convidado...',
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // ── Enviar ────────────────────────────────────────────────
               SizedBox(
-                height: 56,
+                height: 48,
                 child: ElevatedButton(
-                  onPressed: _searching ? null : _buscar,
-                  child: _searching
+                  onPressed: _canSend ? _enviar : null,
+                  child: _sending
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
                         )
-                      : const Text('Buscar'),
+                      : const Text('Enviar convite'),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 20),
-
-          // ── Preview do usuário ──────────────────────────────────────────
-          if (_found != null) ...[
-            Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppColors.primary,
-                  child: Text(
-                    _found!.fullName
-                        .split(' ')
-                        .where((w) => w.isNotEmpty)
-                        .take(2)
-                        .map((w) => w[0].toUpperCase())
-                        .join(),
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                  ),
-                ),
-                title: Text(_found!.fullName),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_found!.email),
-                    Text(CpfUtils.mask(_found!.cpf)),
-                  ],
-                ),
-                isThreeLine: true,
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // ── Cargo ─────────────────────────────────────────────────────
-            Text('Cargo', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _role,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.badge_outlined),
-              ),
-              items: roleOptions,
-              onChanged: (v) => setState(() {
-                _role = v ?? 'inspector';
-              }),
-            ),
-            const SizedBox(height: 20),
-
-            // ── Setores ───────────────────────────────────────────────────
-            Text(
-              _role == 'supervisor' ? 'Setores (o 1º vira dono)' : 'Setores',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            if (_loadingSectors)
-              const Center(child: CircularProgressIndicator())
-            else if (_sectors.isEmpty)
-              Text(
-                'Nenhum setor disponível.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: AppColors.pending),
-              )
-            else
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.border, width: 0.5),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  children: _sectors.map((s) {
-                    final selected = _selectedSectorIds.contains(s.id);
-                    final orderIdx = _selectedSectorIds.indexOf(s.id);
-                    return CheckboxListTile(
-                      title: Text(s.name),
-                      subtitle: (_role == 'supervisor' && orderIdx == 0)
-                          ? const Text('Será o setor dono',
-                              style: TextStyle(color: AppColors.primary))
-                          : null,
-                      value: selected,
-                      onChanged: (v) {
-                        setState(() {
-                          if (v == true) {
-                            _selectedSectorIds.add(s.id);
-                          } else {
-                            _selectedSectorIds.remove(s.id);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-              ),
-            const SizedBox(height: 20),
-
-            // ── Mensagem ──────────────────────────────────────────────────
-            Text('Mensagem (opcional)',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _msgCtrl,
-              maxLength: 500,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Escreva uma mensagem para o convidado...',
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // ── Enviar ────────────────────────────────────────────────────
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _canSend ? _enviar : null,
-                child: _sending
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Enviar convite'),
-              ),
-            ),
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
-/// Força maiúsculas e limita a 6 caracteres alfanuméricos (sem o #).
-class _ProfileCodeFormatter extends TextInputFormatter {
+/// Converte o texto digitado para maiúsculas.
+class UpperCaseTextFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {
-    final cleaned = newValue.text
-        .replaceAll('#', '')
-        .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
-        .toUpperCase();
-    final limited = cleaned.length > 6 ? cleaned.substring(0, 6) : cleaned;
     return TextEditingValue(
-      text: limited,
-      selection: TextSelection.collapsed(offset: limited.length),
+      text: newValue.text.toUpperCase(),
+      selection: newValue.selection,
     );
   }
 }
