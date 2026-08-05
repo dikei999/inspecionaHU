@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -279,6 +280,46 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     value: CpfUtils.mask(profile.cpf),
                     icon: Icons.badge_outlined,
                   ),
+                  if (profile.profileCode.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Código de perfil',
+                        prefixIcon: const Icon(Icons.tag),
+                        filled: true,
+                        fillColor: AppColors.background,
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.copy_outlined,
+                              size: 18, color: AppColors.primary),
+                          tooltip: 'Copiar código',
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(
+                                text: profile.displayCode));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Código copiado'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(
+                              color: AppColors.border, width: 0.5),
+                        ),
+                      ),
+                      child: Text(
+                        profile.displayCode,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

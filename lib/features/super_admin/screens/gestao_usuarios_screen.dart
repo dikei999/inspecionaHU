@@ -44,9 +44,12 @@ class _GestaoUsuariosScreenState extends State<GestaoUsuariosScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
+      // Não lista Super Admins (proteção — seção de segurança).
+      // role IS NULL (sem vínculo) deve continuar aparecendo, por isso o OR.
       final usuarios = await _db
           .from('profiles')
           .select()
+          .or('role.is.null,role.neq.super_admin')
           .order('full_name');
 
       final hospitaisData = await _db
@@ -90,17 +93,42 @@ class _GestaoUsuariosScreenState extends State<GestaoUsuariosScreen> {
   Future<void> _toggleStatus(Profile p) async {
     final auth = context.read<AuthProvider>();
 
-    // Regra: Director ativo não pode ser desativado sem substituto
-    if (p.role == 'director' && p.isActive) {
-      _showSnack(
-        'Desative o Diretor somente após vincular um substituto em "Vincular Diretor".',
-        error: true,
-      );
+    // Proteção: não pode alterar o próprio usuário nem outro Super Admin.
+    if (p.id == auth.profile?.id) {
+      _showSnack('Você não pode alterar o seu próprio usuário.', error: true);
+      return;
+    }
+    if (p.role == 'super_admin') {
+      _showSnack('Não é possível alterar Super Admin.', error: true);
       return;
     }
 
     final newStatus = p.isActive ? 'inactive' : 'active';
     final label = newStatus == 'inactive' ? 'desativar' : 'reativar';
+
+    // Confirmação clara ao desativar um Diretor (hospital ficará sem Diretor).
+    if (p.role == 'director' && p.isActive) {
+      final confirmDir = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Desativar Diretor?'),
+          content: const Text(
+              'Este hospital ficará sem Diretor. Deseja continuar?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.nonCompliant),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Confirmar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmDir != true || !mounted) return;
+    }
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -296,6 +324,14 @@ class _GestaoUsuariosScreenState extends State<GestaoUsuariosScreen> {
                             itemBuilder: (ctx, i) {
                               final p = _filtered[i];
                               final hospital = _hospitalOf(p);
+                              final myId =
+                                  context.read<AuthProvider>().profile?.id;
+                              final isSelf = p.id == myId;
+                              final isSuper = p.role == 'super_admin';
+                              final locked = isSelf || isSuper;
+                              final lockTooltip = isSelf
+                                  ? 'Você não pode excluir a si mesmo'
+                                  : 'Não é possível alterar Super Admin';
                               return Card(
                                 child: ListTile(
                                   leading: CircleAvatar(
@@ -329,23 +365,33 @@ class _GestaoUsuariosScreenState extends State<GestaoUsuariosScreen> {
                                       ),
                                     ],
                                   ),
-                                  trailing: PopupMenuButton<String>(
-                                    onSelected: (v) {
-                                      if (v == 'edit') _editarUsuario(p);
-                                      if (v == 'toggle') _toggleStatus(p);
-                                    },
-                                    itemBuilder: (_) => [
-                                      const PopupMenuItem(
-                                          value: 'edit',
-                                          child: Text('Editar dados')),
-                                      PopupMenuItem(
-                                        value: 'toggle',
-                                        child: Text(p.isActive
-                                            ? 'Desativar'
-                                            : 'Reativar'),
-                                      ),
-                                    ],
-                                  ),
+                                  trailing: locked
+                                      ? Tooltip(
+                                          message: lockTooltip,
+                                          child: const IconButton(
+                                            icon: Icon(Icons.more_vert),
+                                            onPressed: null,
+                                          ),
+                                        )
+                                      : PopupMenuButton<String>(
+                                          onSelected: (v) {
+                                            if (v == 'edit') _editarUsuario(p);
+                                            if (v == 'toggle') {
+                                              _toggleStatus(p);
+                                            }
+                                          },
+                                          itemBuilder: (_) => [
+                                            const PopupMenuItem(
+                                                value: 'edit',
+                                                child: Text('Editar dados')),
+                                            PopupMenuItem(
+                                              value: 'toggle',
+                                              child: Text(p.isActive
+                                                  ? 'Desativar'
+                                                  : 'Reativar'),
+                                            ),
+                                          ],
+                                        ),
                                   isThreeLine: true,
                                 ),
                               );

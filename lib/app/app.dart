@@ -9,6 +9,8 @@ import '../features/auth/screens/aguardo_screen.dart';
 import '../features/auth/screens/forgot_password_screen.dart';
 import '../features/shared/screens/perfil_screen.dart';
 import '../features/shared/screens/notificacoes_screen.dart';
+import '../features/shared/screens/convidar_usuario_screen.dart';
+import '../features/shared/screens/convites_enviados_screen.dart';
 // Super Admin
 import '../features/super_admin/screens/super_admin_dashboard_screen.dart';
 import '../features/super_admin/screens/hospitais_screen.dart';
@@ -163,6 +165,14 @@ class _AppState extends State<App> {
       GoRoute(
         path: AppRoutes.notificacoes,
         builder: (context, state) => const NotificacoesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.convidarUsuario,
+        builder: (context, state) => const ConvidarUsuarioScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.convitesEnviados,
+        builder: (context, state) => const ConvitesEnviadosScreen(),
       ),
 
       // ── Super Admin ───────────────────────────────────────────────────────

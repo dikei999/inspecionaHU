@@ -205,11 +205,19 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
             _NavCard(
               icon: Icons.link,
               color: _semVinculo > 0 ? AppColors.pending : AppColors.primary,
-              title: 'Vincular Diretor',
-              subtitle: 'Atribuir Diretor a um hospital',
+              title: 'Convidar Diretor',
+              subtitle: 'Enviar convite de Diretor a um hospital',
               badge: _semVinculo > 0 ? _semVinculo : null,
               badgeColor: AppColors.pending,
               onTap: () => context.push(AppRoutes.vincularDirector),
+            ),
+            const SizedBox(height: 8),
+            _NavCard(
+              icon: Icons.outgoing_mail,
+              color: AppColors.primary,
+              title: 'Convites enviados',
+              subtitle: 'Acompanhar convites de Diretor',
+              onTap: () => context.push(AppRoutes.convitesEnviados),
             ),
             const SizedBox(height: 8),
             _NavCard(

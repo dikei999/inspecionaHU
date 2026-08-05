@@ -1,3 +1,3 @@
 git add -A
-git commit -m "feat: redesign visual profissional, exportacao PDF/Excel e sistema de notificacoes"
+git commit -m "sistema de convite via código de perfil"
 git push

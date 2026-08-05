@@ -158,6 +158,11 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
     final profile = context.watch<AuthProvider>().profile;
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push(AppRoutes.convidarUsuario),
+        icon: const Icon(Icons.person_add_alt_1),
+        label: const Text('Convidar usuário'),
+      ),
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: Column(
@@ -333,6 +338,12 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
         label: 'Pedidos de Acesso',
         color: AppColors.primary,
         onTap: () => context.push(AppRoutes.pedidosAcesso),
+      ),
+      _NavItem(
+        icon: Icons.outgoing_mail,
+        label: 'Convites Enviados',
+        color: AppColors.primary,
+        onTap: () => context.push(AppRoutes.convitesEnviados),
       ),
     ];
 

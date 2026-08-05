@@ -10,6 +10,8 @@ class AppRoutes {
   // ── Compartilhado ────────────────────────────────────────────────────────
   static const perfil = '/perfil';
   static const notificacoes = '/notificacoes';
+  static const convidarUsuario = '/convidar-usuario';
+  static const convitesEnviados = '/convites-enviados';
 
   // ── Super Admin ──────────────────────────────────────────────────────────
   static const superAdminDashboard = '/super-admin';

@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/hospital.dart';
 import '../../../core/models/profile.dart';
-import '../../../core/services/audit_service.dart';
+import '../../../core/services/invitation_service.dart';
 import '../../../core/utils/cpf_utils.dart';
-import '../../auth/providers/auth_provider.dart';
 
+/// Convida um usuário para ser Diretor de um hospital (Super Admin).
+/// Envia convite via RPC send_director_invitation — o usuário precisa aceitar.
 class VincularDirectorScreen extends StatefulWidget {
   const VincularDirectorScreen({super.key});
 
@@ -19,60 +20,46 @@ class VincularDirectorScreen extends StatefulWidget {
 
 class _VincularDirectorScreenState extends State<VincularDirectorScreen> {
   final _db = Supabase.instance.client;
-  final _emailCtrl = TextEditingController();
+  final _codeCtrl = TextEditingController();
+  final _msgCtrl = TextEditingController();
 
   bool _searching = false;
-  bool _linking = false;
-  bool _searchDone = false;
+  bool _sending = false;
 
   Profile? _found;
-  String? _notFoundMsg;
 
   List<Hospital> _hospitaisSemDiretor = [];
   Hospital? _hospitalSelecionado;
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
+    _codeCtrl.dispose();
+    _msgCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _buscar() async {
-    final email = _emailCtrl.text.trim().toLowerCase();
-    if (email.isEmpty) return;
+    final code = _codeCtrl.text.trim();
+    if (code.isEmpty) return;
+    FocusScope.of(context).unfocus();
 
     setState(() {
       _searching = true;
       _found = null;
-      _notFoundMsg = null;
       _hospitalSelecionado = null;
       _hospitaisSemDiretor = [];
-      _searchDone = false;
     });
 
     try {
-      // Busca usuário pelo e-mail: sem vínculo, ativo
-      final profileData = await _db
-          .from('profiles')
-          .select()
-          .eq('email', email)
-          .eq('status', 'active')
-          .isFilter('role', null)
-          .maybeSingle();
-
+      final result = await InvitationService.lookupUserByCode(code);
       if (!mounted) return;
-
-      if (profileData == null) {
-        setState(() {
-          _notFoundMsg =
-              'Usuário não encontrado, já vinculado, ou ainda não se cadastrou.';
-          _searching = false;
-          _searchDone = true;
-        });
+      if (result == null) {
+        _snack('Código não encontrado ou usuário já vinculado.', error: true);
+        setState(() => _searching = false);
         return;
       }
 
-      // Carrega hospitais sem diretor ativo
+      // Carrega hospitais ativos sem diretor ativo.
       final allHospitais = await _db
           .from('hospitals')
           .select()
@@ -97,59 +84,55 @@ class _VincularDirectorScreenState extends State<VincularDirectorScreen> {
 
       if (mounted) {
         setState(() {
-          _found = Profile.fromJson(profileData);
+          _found = result;
           _hospitaisSemDiretor = hospitaisSemDiretor;
           _searching = false;
-          _searchDone = true;
         });
       }
     } catch (_) {
       if (mounted) {
-        _showSnack('Erro ao buscar. Tente novamente.', error: true);
+        _snack('Erro ao buscar. Tente novamente.', error: true);
         setState(() => _searching = false);
       }
     }
   }
 
-  Future<void> _vincular() async {
+  Future<void> _enviar() async {
     if (_found == null || _hospitalSelecionado == null) return;
-    final auth = context.read<AuthProvider>();
-
-    setState(() => _linking = true);
+    setState(() => _sending = true);
     try {
-      await _db.from('profiles').update({
-        'role': 'director',
-        'hospital_id': _hospitalSelecionado!.id,
-      }).eq('id', _found!.id);
-
-      await AuditService.log(
-        userId: auth.profile!.id,
-        action: 'vincular_director',
-        entityType: 'profile',
-        entityId: _found!.id,
-        details: {
-          'hospital_id': _hospitalSelecionado!.id,
-          'hospital_name': _hospitalSelecionado!.name,
-        },
+      await InvitationService.sendDirectorInvitation(
+        inviteeCode: _codeCtrl.text,
+        hospitalId: _hospitalSelecionado!.id,
+        message: _msgCtrl.text.trim().isEmpty ? null : _msgCtrl.text.trim(),
       );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Diretor vinculado com sucesso!'),
-            backgroundColor: AppColors.compliant,
-          ),
-        );
-        context.pop();
-      }
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Convite enviado'),
+          content: const Text(
+              'O usuário receberá o convite ao abrir o app e precisa aceitar.'),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) context.pop();
+    } on PostgrestException catch (e) {
+      if (mounted) _snack(e.message, error: true);
     } catch (_) {
-      if (mounted) _showSnack('Erro ao vincular Diretor.', error: true);
+      if (mounted) _snack('Erro ao enviar convite.', error: true);
     } finally {
-      if (mounted) setState(() => _linking = false);
+      if (mounted) setState(() => _sending = false);
     }
   }
 
-  void _showSnack(String msg, {bool error = false}) {
+  void _snack(String msg, {bool error = false}) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
       backgroundColor: error ? AppColors.nonCompliant : AppColors.compliant,
@@ -159,12 +142,12 @@ class _VincularDirectorScreenState extends State<VincularDirectorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Vincular Diretor')),
+      appBar: AppBar(title: const Text('Convidar Diretor')),
       body: ListView(
         padding: const EdgeInsets.all(AppDimensions.screenPadding),
         children: [
-          // ── Campo de e-mail ────────────────────────────────────────────
-          Text('E-mail do usuário',
+          // ── Campo de código ─────────────────────────────────────────────
+          Text('Código de perfil',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           Row(
@@ -172,12 +155,13 @@ class _VincularDirectorScreenState extends State<VincularDirectorScreen> {
             children: [
               Expanded(
                 child: TextField(
-                  controller: _emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
+                  controller: _codeCtrl,
+                  textCapitalization: TextCapitalization.characters,
+                  inputFormatters: [_ProfileCodeFormatter()],
                   decoration: const InputDecoration(
-                    labelText: 'E-mail do usuário',
-                    hintText: 'usuario@email.com',
-                    prefixIcon: Icon(Icons.email_outlined),
+                    labelText: 'Código',
+                    hintText: '#ABC123',
+                    prefixIcon: Icon(Icons.tag),
                   ),
                   onSubmitted: (_) => _buscar(),
                 ),
@@ -200,35 +184,7 @@ class _VincularDirectorScreenState extends State<VincularDirectorScreen> {
           ),
           const SizedBox(height: 20),
 
-          // ── Mensagem: não encontrado ───────────────────────────────────
-          if (_searchDone && _notFoundMsg != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.nonCompliant.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: AppColors.nonCompliant.withValues(alpha: 0.4)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline,
-                      color: AppColors.nonCompliant, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _notFoundMsg!,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: AppColors.nonCompliant),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // ── Preview do usuário encontrado ──────────────────────────────
+          // ── Preview do usuário encontrado ───────────────────────────────
           if (_found != null) ...[
             Card(
               child: ListTile(
@@ -244,15 +200,12 @@ class _VincularDirectorScreenState extends State<VincularDirectorScreen> {
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ),
-                title: Text(_found!.fullName,
-                    style: Theme.of(context).textTheme.titleMedium),
+                title: Text(_found!.fullName),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_found!.email,
-                        style: Theme.of(context).textTheme.bodySmall),
-                    Text(CpfUtils.mask(_found!.cpf),
-                        style: Theme.of(context).textTheme.bodySmall),
+                    Text(_found!.email),
+                    Text(CpfUtils.mask(_found!.cpf)),
                   ],
                 ),
                 isThreeLine: true,
@@ -260,7 +213,7 @@ class _VincularDirectorScreenState extends State<VincularDirectorScreen> {
             ),
             const SizedBox(height: 20),
 
-            // ── Dropdown de hospitais sem diretor ─────────────────────
+            // ── Dropdown de hospitais sem diretor ────────────────────────
             Text('Selecionar hospital',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -289,27 +242,60 @@ class _VincularDirectorScreenState extends State<VincularDirectorScreen> {
                     .toList(),
                 onChanged: (v) => setState(() => _hospitalSelecionado = v),
               ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
-            // ── Botão vincular ─────────────────────────────────────────
+            // ── Mensagem opcional ─────────────────────────────────────────
+            Text('Mensagem (opcional)',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _msgCtrl,
+              maxLength: 500,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Escreva uma mensagem para o convidado...',
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Botão enviar ──────────────────────────────────────────────
             SizedBox(
               width: double.infinity,
+              height: 48,
               child: ElevatedButton(
-                onPressed: (_hospitalSelecionado != null && !_linking)
-                    ? _vincular
+                onPressed: (_hospitalSelecionado != null && !_sending)
+                    ? _enviar
                     : null,
-                child: _linking
+                child: _sending
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
-                    : const Text('Vincular como Diretor'),
+                    : const Text('Enviar convite como Diretor'),
               ),
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Força maiúsculas e limita a 6 caracteres alfanuméricos (sem o #).
+class _ProfileCodeFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final cleaned = newValue.text
+        .replaceAll('#', '')
+        .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
+        .toUpperCase();
+    final limited = cleaned.length > 6 ? cleaned.substring(0, 6) : cleaned;
+    return TextEditingValue(
+      text: limited,
+      selection: TextSelection.collapsed(offset: limited.length),
     );
   }
 }

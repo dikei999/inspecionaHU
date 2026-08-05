@@ -9,6 +9,7 @@ class Profile {
   final String status;
   final DateTime? lastAccess;
   final DateTime createdAt;
+  final String profileCode; // código público para convites (6 chars)
 
   const Profile({
     required this.id,
@@ -21,6 +22,7 @@ class Profile {
     required this.status,
     this.lastAccess,
     required this.createdAt,
+    this.profileCode = '',
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) => Profile(
@@ -36,6 +38,7 @@ class Profile {
             ? DateTime.parse(json['last_access'] as String)
             : null,
         createdAt: DateTime.parse(json['created_at'] as String),
+        profileCode: (json['profile_code'] as String?) ?? '',
       );
 
   Map<String, dynamic> toJson() => {
@@ -49,7 +52,11 @@ class Profile {
         'status': status,
         'last_access': lastAccess?.toIso8601String(),
         'created_at': createdAt.toIso8601String(),
+        'profile_code': profileCode,
       };
+
+  /// Código formatado com prefixo # para exibição.
+  String get displayCode => profileCode.isEmpty ? '' : '#$profileCode';
 
   bool get isActive => status == 'active';
   // super_admin has no hospital_id by design — only role matters for them
