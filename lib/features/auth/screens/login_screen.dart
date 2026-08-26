@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../../../app/routes.dart';
+import '../../../core/config/app_config.dart';
+import '../../../core/config/demo_credentials.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../widgets/app_logo.dart';
 
@@ -30,14 +32,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    await _doLogin(_emailCtrl.text.trim(), _passwordCtrl.text);
+  }
+
+  /// Login rápido com uma conta demo fixa (ver DemoCredentials).
+  /// Ferramenta de desenvolvimento — atrás de AppConfig.showDemoLogin.
+  Future<void> _demoLogin((String, String) credentials) async {
+    _emailCtrl.text = credentials.$1;
+    _passwordCtrl.text = credentials.$2;
+    await _doLogin(credentials.$1, credentials.$2);
+  }
+
+  Future<void> _doLogin(String email, String password) async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
     final error = await context.read<AuthProvider>().signIn(
-          email: _emailCtrl.text.trim(),
-          password: _passwordCtrl.text,
+          email: email,
+          password: password,
         );
 
     if (mounted) {
@@ -236,6 +250,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         const SizedBox(height: 20),
 
+                        // ── Modo Demo (ferramenta de desenvolvimento) ────
+                        if (AppConfig.showDemoLogin) ...[
+                          _DemoLoginCard(
+                            loading: _loading,
+                            onSelect: _demoLogin,
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+
                         // ── Link criar conta ─────────────────────────────
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -283,6 +306,114 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Card discreto de login rápido com contas fixas — ferramenta de
+/// desenvolvimento, some quando AppConfig.showDemoLogin = false.
+class _DemoLoginCard extends StatelessWidget {
+  final bool loading;
+  final void Function((String, String) credentials) onSelect;
+
+  const _DemoLoginCard({required this.loading, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade600,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'DEMO',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Login rápido para testes',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white.withValues(alpha: 0.75),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _DemoButton(
+                label: 'Super Admin',
+                onPressed: loading
+                    ? null
+                    : () => onSelect(DemoCredentials.superAdmin),
+              ),
+              _DemoButton(
+                label: 'Diretor',
+                onPressed:
+                    loading ? null : () => onSelect(DemoCredentials.director),
+              ),
+              _DemoButton(
+                label: 'Supervisor',
+                onPressed: loading
+                    ? null
+                    : () => onSelect(DemoCredentials.supervisor),
+              ),
+              _DemoButton(
+                label: 'Inspetor',
+                onPressed: loading
+                    ? null
+                    : () => onSelect(DemoCredentials.inspector),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DemoButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+
+  const _DemoButton({required this.label, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.4)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+      child: Text('Entrar como $label'),
     );
   }
 }

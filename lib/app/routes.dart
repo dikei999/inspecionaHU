@@ -23,6 +23,7 @@ class AppRoutes {
   static const novoTemplateGlobal = '/super-admin/templates-globais/novo';
   static String editarTemplateGlobal(String id) =>
       '/super-admin/templates-globais/$id/editar';
+  static const painelDemo = '/super-admin/painel-demo';
 
   // ── Director ─────────────────────────────────────────────────────────────
   static const directorDashboard = '/director';

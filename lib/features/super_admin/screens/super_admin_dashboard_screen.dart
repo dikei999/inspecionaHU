@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../app/routes.dart';
+import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../widgets/charts.dart';
 import '../../../widgets/skeleton_loader.dart';
@@ -235,6 +236,16 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
               subtitle: 'Modelos globais para todos os hospitais',
               onTap: () => context.push(AppRoutes.templatesGlobais),
             ),
+            if (AppConfig.showDemoLogin) ...[
+              const SizedBox(height: 8),
+              _NavCard(
+                icon: Icons.science_outlined,
+                color: Colors.grey.shade600,
+                title: 'Painel Demo',
+                subtitle: 'Provisionar contas e dados de teste (dev only)',
+                onTap: () => context.push(AppRoutes.painelDemo),
+              ),
+            ],
           ],
         ),
       ),

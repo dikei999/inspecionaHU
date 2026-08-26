@@ -19,6 +19,7 @@ import '../features/super_admin/screens/vincular_director_screen.dart';
 import '../features/super_admin/screens/gestao_usuarios_screen.dart';
 import '../features/super_admin/screens/templates_globais_screen.dart';
 import '../features/super_admin/screens/form_template_screen.dart';
+import '../features/super_admin/screens/painel_demo_screen.dart';
 // Director
 import '../features/director/screens/director_dashboard_screen.dart';
 import '../features/director/screens/gestao_setores_screen.dart';
@@ -210,6 +211,10 @@ class _AppState extends State<App> {
           scope: 'global',
           templateId: state.pathParameters['id'],
         ),
+      ),
+      GoRoute(
+        path: AppRoutes.painelDemo,
+        builder: (context, state) => const PainelDemoScreen(),
       ),
 
       // ── Director ──────────────────────────────────────────────────────────
