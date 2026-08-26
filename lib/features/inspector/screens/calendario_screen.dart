@@ -113,7 +113,16 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
         _selectedDay != null ? _tasksForDay(_selectedDay!) : <Task>[];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Calendário')),
+      appBar: AppBar(
+        title: const Text('Calendário'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sair',
+            onPressed: () => context.read<AuthProvider>().signOut(),
+          ),
+        ],
+      ),
       body: _loading
           ? const SkeletonList(itemCount: 4, itemHeight: 120)
           : RefreshIndicator(

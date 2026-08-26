@@ -126,7 +126,16 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Histórico')),
+      appBar: AppBar(
+        title: const Text('Histórico'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sair',
+            onPressed: () => context.read<AuthProvider>().signOut(),
+          ),
+        ],
+      ),
       body: _loading
           ? const SkeletonList(itemHeight: 110)
           : RefreshIndicator(

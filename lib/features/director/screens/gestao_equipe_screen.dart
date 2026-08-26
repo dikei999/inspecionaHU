@@ -95,9 +95,117 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
     ));
   }
 
-  // A vinculação de Supervisor/Inspetor agora é feita por convite via código
-  // de perfil — o botão "Convidar usuário" abre a tela dedicada. Esta tela
-  // apenas lista a equipe já vinculada e permite desativação.
+  // A vinculação de Supervisor/Inspetor ao hospital agora é feita por
+  // convite via código de perfil — o botão "Convidar usuário" abre a tela
+  // dedicada. O vínculo de setores do Inspetor (inspector_sectors), porém,
+  // não faz parte desse convite e é gerenciado aqui.
+
+  Future<void> _gerenciarSetores(Profile inspetor) async {
+    Set<String> vinculados;
+    try {
+      final data = await _db
+          .from('inspector_sectors')
+          .select('sector_id')
+          .eq('inspector_id', inspetor.id)
+          .eq('status', 'active');
+      vinculados = (data as List).map((e) => e['sector_id'] as String).toSet();
+    } catch (_) {
+      if (mounted) _showSnack('Erro ao carregar setores do Inspetor.', error: true);
+      return;
+    }
+
+    if (!mounted) return;
+    final selecionados = Set<String>.from(vinculados);
+
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text('Setores de ${inspetor.fullName}'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: _setores.isEmpty
+                ? const Text('Nenhum setor cadastrado neste hospital.')
+                : ListView(
+                    shrinkWrap: true,
+                    children: _setores
+                        .map((s) => CheckboxListTile(
+                              title: Text(s.name),
+                              value: selecionados.contains(s.id),
+                              onChanged: (v) {
+                                setDialogState(() {
+                                  if (v == true) {
+                                    selecionados.add(s.id);
+                                  } else {
+                                    selecionados.remove(s.id);
+                                  }
+                                });
+                              },
+                            ))
+                        .toList(),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Salvar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmou != true || !mounted) return;
+
+    final auth = context.read<AuthProvider>();
+    final adicionar = selecionados.difference(vinculados);
+    final remover = vinculados.difference(selecionados);
+
+    try {
+      if (adicionar.isNotEmpty) {
+        await _db.from('inspector_sectors').upsert(
+              adicionar
+                  .map((sectorId) => {
+                        'inspector_id': inspetor.id,
+                        'sector_id': sectorId,
+                        'assigned_by': auth.profile!.id,
+                        'status': 'active',
+                      })
+                  .toList(),
+              onConflict: 'inspector_id,sector_id',
+            );
+      }
+      if (remover.isNotEmpty) {
+        await _db
+            .from('inspector_sectors')
+            .update({'status': 'inactive'})
+            .eq('inspector_id', inspetor.id)
+            .inFilter('sector_id', remover.toList());
+      }
+
+      await AuditService.log(
+        userId: auth.profile!.id,
+        hospitalId: _hospitalId,
+        action: 'vincular_inspetor_setores',
+        entityType: 'profile',
+        entityId: inspetor.id,
+        details: {
+          'adicionados': adicionar.toList(),
+          'removidos': remover.toList(),
+        },
+      );
+
+      if (mounted) _showSnack('Setores de ${inspetor.fullName} atualizados.');
+    } on PostgrestException catch (e) {
+      if (mounted) _showSnack('Erro ao salvar: ${e.message}', error: true);
+    } catch (_) {
+      if (mounted) _showSnack('Erro ao salvar vínculos.', error: true);
+    }
+  }
 
   Future<void> _desativar(Profile p) async {
     final auth = context.read<AuthProvider>();
@@ -199,6 +307,7 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
                   users: _inspetores,
                   setores: _setores,
                   onDesativar: _desativar,
+                  onGerenciarSetores: _gerenciarSetores,
                   emptyMsg: 'Nenhum Inspetor vinculado.',
                 ),
               ],
@@ -211,12 +320,14 @@ class _UserList extends StatelessWidget {
   final List<Profile> users;
   final List<Sector> setores;
   final Future<void> Function(Profile) onDesativar;
+  final Future<void> Function(Profile)? onGerenciarSetores;
   final String emptyMsg;
 
   const _UserList({
     required this.users,
     required this.setores,
     required this.onDesativar,
+    this.onGerenciarSetores,
     required this.emptyMsg,
   });
 
@@ -247,8 +358,16 @@ class _UserList extends StatelessWidget {
             trailing: PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'desativar') onDesativar(u);
+                if (v == 'setores' && onGerenciarSetores != null) {
+                  onGerenciarSetores!(u);
+                }
               },
               itemBuilder: (_) => [
+                if (onGerenciarSetores != null)
+                  const PopupMenuItem(
+                    value: 'setores',
+                    child: Text('Setores'),
+                  ),
                 PopupMenuItem(
                   value: 'desativar',
                   child: Text(u.isActive ? 'Desativar' : 'Reativar'),

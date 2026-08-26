@@ -1,3 +1,3 @@
 git add -A
-git commit -m "feat: modo demo com contas fixas + painel de gestão + seed de dados"
+git commit -m "fix: logout do Inspetor + vínculo Inspetor-Setor no seed demo + gestão de vínculos"
 git push

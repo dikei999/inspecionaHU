@@ -124,6 +124,11 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
             tooltip: 'Perfil',
             onPressed: () => context.push(AppRoutes.perfil),
           ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sair',
+            onPressed: () => context.read<AuthProvider>().signOut(),
+          ),
         ],
       ),
       body: RefreshIndicator(
