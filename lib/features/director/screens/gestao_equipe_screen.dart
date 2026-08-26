@@ -45,7 +45,12 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
   Future<void> _load() async {
     setState(() => _loading = true);
     final profile = context.read<AuthProvider>().profile;
-    if (profile?.hospitalId == null) return;
+    if (profile?.hospitalId == null) {
+      // Perfil ainda nao carregado: encerra o loading para
+      // a tela nao ficar presa no skeleton indefinidamente.
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     _hospitalId = profile!.hospitalId!;
 
     try {

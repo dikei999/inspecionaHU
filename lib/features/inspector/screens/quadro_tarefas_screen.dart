@@ -46,7 +46,12 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     final uid = context.read<AuthProvider>().profile?.id;
-    if (uid == null) return;
+    if (uid == null) {
+      // Perfil ainda nao carregado: encerra o loading para
+      // a tela nao ficar presa no skeleton indefinidamente.
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
 
     try {
       final data = await _db

@@ -44,14 +44,19 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     final profile = context.read<AuthProvider>().profile;
-    if (profile == null) return;
+    if (profile == null) {
+      // Perfil ainda nao carregado: encerra o loading para
+      // a tela nao ficar presa no skeleton indefinidamente.
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     final hospitalId = profile.hospitalId!;
 
     try {
       final reports = await _db
           .from('reports')
           .select(
-              'compliance_rate, compliant_items, non_compliant_items, not_applicable_items')
+              'compliance_rate, compliant, non_compliant, not_applicable')
           .eq('hospital_id', hospitalId);
 
       double conf = 0;
@@ -61,9 +66,9 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
             0, (acc, r) => acc + (r['compliance_rate'] as num).toDouble());
         conf = sum / reports.length;
         for (final r in reports) {
-          sumC += (r['compliant_items'] as num? ?? 0).toInt();
-          sumNc += (r['non_compliant_items'] as num? ?? 0).toInt();
-          sumNa += (r['not_applicable_items'] as num? ?? 0).toInt();
+          sumC += (r['compliant'] as num? ?? 0).toInt();
+          sumNc += (r['non_compliant'] as num? ?? 0).toInt();
+          sumNa += (r['not_applicable'] as num? ?? 0).toInt();
         }
       }
 

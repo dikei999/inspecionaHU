@@ -519,14 +519,12 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       // INSERT / UPSERT report
       await _db.from('reports').upsert({
         'inspection_id': _inspection!.id,
-        'checklist_id': _task!.checklistId,
         'sector_id': _task!.sectorId,
         'hospital_id': _task!.hospitalId,
-        'inspector_id': profile.id,
         'total_items': total,
-        'compliant_items': compliant,
-        'non_compliant_items': nonCompliant,
-        'not_applicable_items': notApplicable,
+        'compliant': compliant,
+        'non_compliant': nonCompliant,
+        'not_applicable': notApplicable,
         'compliance_rate': rate,
         'generated_at': now,
       }, onConflict: 'inspection_id');

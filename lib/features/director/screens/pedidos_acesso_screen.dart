@@ -34,7 +34,12 @@ class _PedidosAcessoScreenState extends State<PedidosAcessoScreen> {
     setState(() => _loading = true);
     final profile = context.read<AuthProvider>().profile;
     _hospitalId = profile?.hospitalId;
-    if (_hospitalId == null) return;
+    if (_hospitalId == null) {
+      // Perfil ainda nao carregado: encerra o loading para
+      // a tela nao ficar presa no skeleton indefinidamente.
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
 
     try {
       // Busca setores do hospital para filtrar pedidos relevantes

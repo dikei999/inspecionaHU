@@ -32,7 +32,12 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
     setState(() => _loading = true);
     final hospitalId =
         context.read<AuthProvider>().profile?.hospitalId;
-    if (hospitalId == null) return;
+    if (hospitalId == null) {
+      // Perfil ainda nao carregado: encerra o loading para
+      // a tela nao ficar presa no skeleton indefinidamente.
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
 
     try {
       final setores = await _db
