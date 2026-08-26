@@ -1,3 +1,3 @@
 git add -A
-git commit -m "fix: logout do Inspetor + vínculo Inspetor-Setor no seed demo + gestão de vínculos"
+git commit -m "fix: storage policies + tela convidar diretor + unificação com convites enviados"
 git push
