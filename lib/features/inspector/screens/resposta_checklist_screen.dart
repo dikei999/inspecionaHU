@@ -713,10 +713,11 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
                   onStatusChanged: (s) {
                     setState(() {
                       state.status = s;
-                      // Limpar observação e foto se mudar de NC
+                      // Ao sair de NC, limpa a observação (que era obrigatória
+                      // por causa da NC). O Inspetor ainda pode digitar uma
+                      // observação opcional em C/NA. A foto é mantida.
                       if (s != 'NC') {
                         state.observation = '';
-                        // Mantém foto (pode ter sido tirada antes de mudar)
                       }
                     });
                     _saveResponse(item.id);
@@ -987,6 +988,16 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
   }
 
   @override
+  void didUpdateWidget(covariant _ChecklistItemCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // O pai limpa state.observation ao sair de NC — reflete no controller
+    // para o texto antigo não continuar visível no campo.
+    if (_obsCtrl.text != widget.state.observation) {
+      _obsCtrl.text = widget.state.observation;
+    }
+  }
+
+  @override
   void dispose() {
     _obsCtrl.dispose();
     super.dispose();
@@ -1190,8 +1201,9 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
               // Modo leitura
               _ReadonlyStatus(status: state.status),
 
-            // ── Observação (obrigatória se NC) ───────────────────────────
-            if (isNC || (widget.locked && state.observation.isNotEmpty)) ...[
+            // ── Observação (sempre visível; obrigatória apenas se NC) ────
+            if (!widget.locked ||
+                (widget.locked && state.observation.isNotEmpty)) ...[
               const SizedBox(height: 12),
               if (!widget.locked)
                 TextField(
@@ -1199,7 +1211,9 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
                   maxLines: 3,
                   onChanged: widget.onObservationChanged,
                   decoration: InputDecoration(
-                    labelText: 'Observação (obrigatória)',
+                    labelText: isNC
+                        ? 'Observação (obrigatória)'
+                        : 'Observação (opcional)',
                     hintText: AppStrings.observationHint,
                     prefixIcon: const Icon(Icons.edit_note_outlined),
                     errorText: isNC && state.observation.trim().isEmpty
@@ -1224,33 +1238,16 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
                 ),
             ],
 
-            // ── Foto ──────────────────────────────────────────────────────
-            if (isNC || state.photoUrl != null || state.photoLocalPath != null) ...[
+            // ── Foto (sempre visível para C/NC/NA) ────────────────────────
+            if (!widget.locked ||
+                state.photoUrl != null ||
+                state.photoLocalPath != null) ...[
               const SizedBox(height: 12),
               _PhotoSection(
                 state: state,
                 requiresPhoto: item.requiresPhoto,
                 locked: widget.locked,
                 onTakePhoto: widget.onTakePhoto,
-              ),
-            ],
-
-            // ── Botão foto opcional (para C/NA) ───────────────────────────
-            if (!isNC &&
-                state.photoUrl == null &&
-                state.photoLocalPath == null &&
-                !widget.locked &&
-                state.status != null) ...[
-              const SizedBox(height: 10),
-              TextButton.icon(
-                onPressed: state.uploading ? null : widget.onTakePhoto,
-                icon: const Icon(Icons.camera_alt_outlined, size: 16),
-                label: const Text('Adicionar foto (opcional)'),
-                style: TextButton.styleFrom(
-                  minimumSize: Size.zero,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                ),
               ),
             ],
           ],

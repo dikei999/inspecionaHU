@@ -469,12 +469,6 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
                   icon: const Icon(Icons.file_copy_outlined, size: 18),
                   label: const Text('Usar template'),
                 ),
-                TextButton.icon(
-                  onPressed: () =>
-                      setState(() => _itens.add(_ChecklistItemForm())),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Item'),
-                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -518,22 +512,50 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
               ],
             ),
 
-            const SizedBox(height: 32),
-            SizedBox(
-              height: AppDimensions.buttonHeight,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _salvar,
-                child: _loading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : Text(_isEdit ? 'Salvar alterações' : 'Criar Checklist'),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+
+      // ── Barra fixa: Adicionar item + Salvar ───────────────────────────
+      // Fica sempre acessível, sem precisar rolar até o fim da lista.
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: AppDimensions.buttonHeight,
+                child: OutlinedButton.icon(
+                  onPressed: _loading
+                      ? null
+                      : () => setState(() => _itens.add(_ChecklistItemForm())),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Adicionar item'),
+                ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SizedBox(
+                height: AppDimensions.buttonHeight,
+                child: ElevatedButton(
+                  onPressed: _loading ? null : _salvar,
+                  child: _loading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text(_isEdit ? 'Salvar' : 'Criar'),
+                ),
+              ),
+            ),
           ],
         ),
       ),

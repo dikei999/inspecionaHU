@@ -67,7 +67,11 @@ class _NovoConviteTab extends StatefulWidget {
   State<_NovoConviteTab> createState() => _NovoConviteTabState();
 }
 
-class _NovoConviteTabState extends State<_NovoConviteTab> {
+class _NovoConviteTabState extends State<_NovoConviteTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   final _db = Supabase.instance.client;
   final _codeCtrl = TextEditingController();
   final _msgCtrl = TextEditingController();
@@ -182,6 +186,7 @@ class _NovoConviteTabState extends State<_NovoConviteTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // exigido pelo AutomaticKeepAliveClientMixin
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppDimensions.screenPadding),
       child: Column(
@@ -193,38 +198,34 @@ class _NovoConviteTabState extends State<_NovoConviteTab> {
                   .bodyMedium
                   ?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _codeCtrl,
-                  textCapitalization: TextCapitalization.characters,
-                  maxLength: 6,
-                  decoration: const InputDecoration(
-                    labelText: 'Código',
-                    hintText: 'ABC123',
-                    prefixText: '# ',
-                    counterText: '',
-                  ),
-                  onSubmitted: (_) => _buscar(),
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _searching ? null : _buscar,
-                  child: _searching
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Buscar'),
-                ),
-              ),
-            ],
+          // O campo e o botão ficam em linhas separadas: dentro de uma
+          // Column com stretch, um Row misturando Expanded + botão de
+          // largura intrínseca pode colapsar a largura do TextField.
+          TextField(
+            controller: _codeCtrl,
+            textCapitalization: TextCapitalization.characters,
+            maxLength: 6,
+            decoration: const InputDecoration(
+              labelText: 'Código',
+              hintText: 'ABC123',
+              prefixText: '# ',
+              counterText: '',
+            ),
+            onSubmitted: (_) => _buscar(),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 48,
+            child: ElevatedButton(
+              onPressed: _searching ? null : _buscar,
+              child: _searching
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Buscar'),
+            ),
           ),
           const SizedBox(height: 20),
 
@@ -318,7 +319,11 @@ class _ConvitesEnviadosTab extends StatefulWidget {
   State<_ConvitesEnviadosTab> createState() => _ConvitesEnviadosTabState();
 }
 
-class _ConvitesEnviadosTabState extends State<_ConvitesEnviadosTab> {
+class _ConvitesEnviadosTabState extends State<_ConvitesEnviadosTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   bool _loading = true;
   List<Invitation> _invites = [];
   String? _cancellingId;
@@ -391,6 +396,7 @@ class _ConvitesEnviadosTabState extends State<_ConvitesEnviadosTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // exigido pelo AutomaticKeepAliveClientMixin
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }

@@ -131,16 +131,23 @@ class ReportExportService {
   // ── PDF ─────────────────────────────────────────────────────────────────────
 
   static Future<Uint8List> buildPdf(ReportExportData data) async {
-    // Baixa as fotos das NCs antes de montar o documento
-    // (tratamento de erro individual: foto que falhar vira placeholder)
-    final ncResponses = data.orderedResponses
-        .where((r) => r.status == 'NC')
-        .toList();
+    final ordered = data.orderedResponses;
+
+    // Numeração humana (1, 2, 3...) na ordem em que os itens são
+    // renderizados — não usa o order_index cru do banco.
+    final displayNumbers = <String, int>{
+      for (var i = 0; i < ordered.length; i++) ordered[i].id: i + 1,
+    };
+
+    final ncResponses = ordered.where((r) => r.status == 'NC').toList();
+
+    // Baixa as fotos de TODOS os itens que têm foto (C, NC e NA) antes de
+    // montar o documento. Tratamento de erro individual: foto que falhar
+    // vira placeholder e não impede a exportação.
+    final withPhoto = ordered.where((r) => r.photoUrl != null).toList();
     final photoBytes = <String, Uint8List?>{};
-    for (final r in ncResponses) {
-      if (r.photoUrl != null) {
-        photoBytes[r.id] = await _downloadPhoto(r.photoUrl!);
-      }
+    for (final r in withPhoto) {
+      photoBytes[r.id] = await _downloadPhoto(r.photoUrl!);
     }
 
     final doc = pw.Document(
@@ -168,7 +175,7 @@ class ReportExportService {
                   fontWeight: pw.FontWeight.bold,
                   color: _pdfPrimary)),
           pw.SizedBox(height: 8),
-          _pdfItemsTable(data),
+          _pdfItemsTable(data, displayNumbers),
           if (ncResponses.isNotEmpty) ...[
             pw.SizedBox(height: 20),
             pw.Text('Não conformidades',
@@ -177,7 +184,19 @@ class ReportExportService {
                     fontWeight: pw.FontWeight.bold,
                     color: _pdfNonCompliant)),
             pw.SizedBox(height: 8),
-            ...ncResponses.map((r) => _pdfNcBlock(data, r, photoBytes[r.id])),
+            ...ncResponses.map((r) =>
+                _pdfNcBlock(data, r, photoBytes[r.id], displayNumbers[r.id])),
+          ],
+          if (withPhoto.isNotEmpty) ...[
+            pw.SizedBox(height: 20),
+            pw.Text('Evidências fotográficas',
+                style: pw.TextStyle(
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                    color: _pdfPrimary)),
+            pw.SizedBox(height: 8),
+            ...withPhoto.map((r) => _pdfPhotoEvidenceBlock(
+                data, r, photoBytes[r.id], displayNumbers[r.id])),
           ],
         ],
       ),
@@ -348,7 +367,8 @@ class ReportExportService {
     );
   }
 
-  static pw.Widget _pdfItemsTable(ReportExportData data) {
+  static pw.Widget _pdfItemsTable(
+      ReportExportData data, Map<String, int> displayNumbers) {
     PdfColor statusColor(String? s) => s == 'C'
         ? _pdfCompliant
         : s == 'NC'
@@ -384,7 +404,8 @@ class ReportExportService {
             children: [
               pw.Padding(
                 padding: const pw.EdgeInsets.all(4),
-                child: pw.Text('${item?.orderIndex ?? '—'}', style: cellStyle),
+                child: pw.Text('${displayNumbers[r.id] ?? '—'}',
+                    style: cellStyle),
               ),
               pw.Padding(
                 padding: const pw.EdgeInsets.all(4),
@@ -419,8 +440,8 @@ class ReportExportService {
     );
   }
 
-  static pw.Widget _pdfNcBlock(
-      ReportExportData data, InspectionResponse r, Uint8List? photo) {
+  static pw.Widget _pdfNcBlock(ReportExportData data, InspectionResponse r,
+      Uint8List? photo, int? displayNumber) {
     final item = data.items[r.checklistItemId];
     final isCritical = item?.isCritical ?? false;
 
@@ -459,7 +480,9 @@ class ReportExportService {
             ],
           ),
           pw.SizedBox(height: 4),
-          pw.Text(item?.description ?? 'Item removido',
+          pw.Text(
+              '${displayNumber != null ? '$displayNumber. ' : ''}'
+              '${item?.description ?? 'Item removido'}',
               style:
                   pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
           if (r.observation != null) ...[
@@ -467,39 +490,123 @@ class ReportExportService {
             pw.Text('Observação: ${r.observation}',
                 style: const pw.TextStyle(fontSize: 9)),
           ],
+          // A foto é exibida na seção "Evidências fotográficas" (que cobre
+          // itens C, NC e NA) — não repete aqui.
           if (r.photoUrl != null) ...[
-            pw.SizedBox(height: 6),
-            if (photo != null)
-              pw.ClipRRect(
-                horizontalRadius: 4,
-                verticalRadius: 4,
-                child: pw.Image(
-                  pw.MemoryImage(photo),
-                  width: 220,
-                  height: 150,
-                  fit: pw.BoxFit.cover,
-                ),
-              )
-            else
-              pw.Container(
-                width: 220,
-                height: 40,
-                alignment: pw.Alignment.center,
-                decoration: pw.BoxDecoration(
-                  color: _pdfLightGray,
-                  borderRadius: pw.BorderRadius.circular(4),
-                ),
-                child: pw.Text('Foto indisponível',
-                    style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
-              ),
-            if (r.photoCapturedAt != null)
-              pw.Padding(
-                padding: const pw.EdgeInsets.only(top: 2),
-                child: pw.Text(
-                    'Foto capturada em ${_dateFmt.format(r.photoCapturedAt!)}',
-                    style: pw.TextStyle(fontSize: 7.5, color: _pdfGray)),
-              ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+                photo != null
+                    ? 'Foto anexada — ver Evidências fotográficas'
+                    : 'Foto anexada — indisponível no momento da exportação',
+                style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Bloco de evidência fotográfica de um item (qualquer status: C, NC, NA).
+  /// A imagem mantém a orientação original — usa BoxFit.contain dentro de
+  /// uma altura máxima, sem forçar proporção de paisagem.
+  static pw.Widget _pdfPhotoEvidenceBlock(ReportExportData data,
+      InspectionResponse r, Uint8List? photo, int? displayNumber) {
+    final item = data.items[r.checklistItemId];
+    final status = r.status ?? '—';
+    final statusColor = status == 'C'
+        ? _pdfCompliant
+        : status == 'NC'
+            ? _pdfNonCompliant
+            : _pdfGray;
+
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 10),
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: _pdfBorder, width: 0.8),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          // Foto: largura fixa, altura livre até um teto — preserva retrato.
+          pw.Container(
+            width: 150,
+            constraints: const pw.BoxConstraints(maxHeight: 200),
+            alignment: pw.Alignment.topCenter,
+            child: photo != null
+                ? pw.ClipRRect(
+                    horizontalRadius: 4,
+                    verticalRadius: 4,
+                    child: pw.Image(
+                      pw.MemoryImage(photo),
+                      fit: pw.BoxFit.contain,
+                    ),
+                  )
+                : pw.Container(
+                    height: 40,
+                    alignment: pw.Alignment.center,
+                    decoration: pw.BoxDecoration(
+                      color: _pdfLightGray,
+                      borderRadius: pw.BorderRadius.circular(4),
+                    ),
+                    child: pw.Text('Foto indisponível',
+                        style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
+                  ),
+          ),
+          pw.SizedBox(width: 10),
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  children: [
+                    pw.Text(
+                        displayNumber != null ? 'Item $displayNumber' : 'Item',
+                        style: pw.TextStyle(
+                            fontSize: 9,
+                            fontWeight: pw.FontWeight.bold,
+                            color: _pdfPrimary)),
+                    pw.SizedBox(width: 6),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: pw.BoxDecoration(
+                        color: statusColor,
+                        borderRadius: pw.BorderRadius.circular(3),
+                      ),
+                      child: pw.Text(status,
+                          style: pw.TextStyle(
+                              fontSize: 7,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.white)),
+                    ),
+                    if (item?.isCritical ?? false) ...[
+                      pw.SizedBox(width: 4),
+                      pw.Text('CRÍTICO',
+                          style: pw.TextStyle(
+                              fontSize: 7,
+                              fontWeight: pw.FontWeight.bold,
+                              color: _pdfNonCompliant)),
+                    ],
+                  ],
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(item?.description ?? 'Item removido',
+                    style: const pw.TextStyle(fontSize: 9)),
+                if (r.observation != null && r.observation!.isNotEmpty) ...[
+                  pw.SizedBox(height: 4),
+                  pw.Text('Observação: ${r.observation}',
+                      style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
+                ],
+                if (r.photoCapturedAt != null) ...[
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                      'Capturada em ${_dateFmt.format(r.photoCapturedAt!)}',
+                      style: pw.TextStyle(fontSize: 7.5, color: _pdfGray)),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -559,10 +666,13 @@ class ReportExportService {
       xls.TextCellValue('Possui foto?'),
     ]);
 
-    for (final r in data.orderedResponses) {
+    final orderedForExcel = data.orderedResponses;
+    for (var i = 0; i < orderedForExcel.length; i++) {
+      final r = orderedForExcel[i];
       final item = data.items[r.checklistItemId];
       itens.appendRow([
-        xls.IntCellValue(item?.orderIndex ?? 0),
+        // Numeração humana (1, 2, 3...), igual à do PDF.
+        xls.IntCellValue(i + 1),
         xls.TextCellValue(item?.description ?? 'Item removido'),
         xls.TextCellValue(r.status ?? '—'),
         xls.TextCellValue((item?.isCritical ?? false) ? 'Sim' : 'Não'),
