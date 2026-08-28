@@ -4,7 +4,10 @@ class AppColors {
   AppColors._();
 
   // Identidade visual (seção 11 do CLAUDE.md)
-  static const Color primary = Color(0xFF1A56DB);
+  static const Color primary = Color(0xFF00448E);
+  // Verde da marca HU — uso exclusivo em contexto de logo/identidade visual.
+  // NUNCA como cor de acao/status (nao confundir com compliant).
+  static const Color brandGreen = Color(0xFF07B18D);
   static const Color compliant = Color(0xFF16A34A);
   static const Color nonCompliant = Color(0xFFDC2626);
   static const Color pending = Color(0xFFD97706);
@@ -13,13 +16,13 @@ class AppColors {
   static const Color border = Color(0xFFE5E7EB);
 
   // Escala tonal do primary (para superfícies, hovers e gradientes)
-  static const Color primary50 = Color(0xFFEFF4FE);
-  static const Color primary100 = Color(0xFFDBE6FD);
-  static const Color primary200 = Color(0xFFBFD3FA);
-  static const Color primary600 = Color(0xFF1548B8);
-  static const Color primary700 = Color(0xFF113A95);
-  static const Color primary800 = Color(0xFF0E2F78);
-  static const Color primary900 = Color(0xFF0B2560);
+  static const Color primary50 = Color(0xFFF1F5F9);
+  static const Color primary100 = Color(0xFFE0E9F1);
+  static const Color primary200 = Color(0xFFC5D5E5);
+  static const Color primary600 = Color(0xFF003876);
+  static const Color primary700 = Color(0xFF002E5F);
+  static const Color primary800 = Color(0xFF00254D);
+  static const Color primary900 = Color(0xFF001D3D);
 
   // Escalas tonais dos semânticos (fundos suaves)
   static const Color compliant50 = Color(0xFFF0FDF4);
@@ -51,19 +54,6 @@ class AppColors {
 
   // NC Crítica
   static const Color criticalNc = nonCompliant;
-
-  // Gradiente institucional (login hero, cabeçalhos)
-  static const LinearGradient heroGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [primary700, primary, Color(0xFF2563EB)],
-  );
-
-  static const LinearGradient subtleCardGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [surface, surfaceSubtle],
-  );
 }
 
 /// Sombras suaves padronizadas — usar no lugar de elevation do Material.

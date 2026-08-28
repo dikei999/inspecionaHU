@@ -1,11 +1,11 @@
 {
-    "name": "inspecionahu",
-    "short_name": "inspecionahu",
+    "name": "InspecionaHU",
+    "short_name": "InspecionaHU",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#00448E",
+    "theme_color": "#00448E",
+    "description": "Gestão de conformidade NR-32 — HU-UFPI/EBSERH",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

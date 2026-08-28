@@ -113,11 +113,19 @@ class _RelatorioIndividualScreenState
           .eq('id', inspection.hospitalId)
           .single();
 
-      // Ordena respostas pelo order_index do item
+      // Ordena respostas pelo order_index do item, com desempate por
+      // checklistItemId — order_index repetido (ou item removido caindo no
+      // fallback 0) nao pode gerar ordem diferente entre telas e PDF.
       final responses =
           responsesData.map(InspectionResponse.fromJson).toList()
-            ..sort((a, b) => (itemMap[a.checklistItemId]?.orderIndex ?? 0)
-                .compareTo(itemMap[b.checklistItemId]?.orderIndex ?? 0));
+            ..sort((a, b) {
+              final oa = itemMap[a.checklistItemId]?.orderIndex ?? 0;
+              final ob = itemMap[b.checklistItemId]?.orderIndex ?? 0;
+              final cmp = oa.compareTo(ob);
+              return cmp != 0
+                  ? cmp
+                  : a.checklistItemId.compareTo(b.checklistItemId);
+            });
 
       if (mounted) {
         setState(() {
@@ -319,6 +327,12 @@ class _RelatorioIndividualScreenState
     final ncResponses =
         _responses.where((r) => r.status == 'NC').toList();
 
+    // Numeracao humana (1, 2, 3...) na ordem do checklist — mesma logica
+    // usada no PDF e no Excel, para os numeros baterem entre si.
+    final displayNumbers = <String, int>{
+      for (var i = 0; i < _responses.length; i++) _responses[i].id: i + 1,
+    };
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Relatório'),
@@ -448,6 +462,7 @@ class _RelatorioIndividualScreenState
                   child: _NcCard(
                     response: resp,
                     item: _items[resp.checklistItemId],
+                    displayNumber: displayNumbers[resp.id],
                   ),
                 )),
             const SizedBox(height: 8),
@@ -477,6 +492,8 @@ class _RelatorioIndividualScreenState
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        _ItemNumberBadge(number: displayNumbers[resp.id]),
+                        const SizedBox(width: 10),
                         ResponseBadge(status: resp.status),
                         if (isCritical) ...[
                           const SizedBox(width: 6),
@@ -510,6 +527,15 @@ class _RelatorioIndividualScreenState
                       Text(
                         resp.observation!,
                         style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    // Foto dos itens C/NA — a das NC ja aparece no card de
+                    // nao conformidade acima, nao duplica aqui.
+                    if (resp.status != 'NC' && resp.photoUrl != null) ...[
+                      const SizedBox(height: 8),
+                      _ResponsePhoto(
+                        photoUrl: resp.photoUrl!,
+                        capturedAt: resp.photoCapturedAt,
                       ),
                     ],
                   ],
@@ -552,12 +578,119 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
+/// Badge numérico do item — mesma marcação da tela de resposta do Inspetor,
+/// para os números baterem entre a inspeção, o relatório e o PDF.
+class _ItemNumberBadge extends StatelessWidget {
+  final int? number;
+  const _ItemNumberBadge({this.number});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.primary50,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        number != null ? '$number' : '—',
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Foto de uma resposta (qualquer status) via signed URL re-gerada.
+/// Sem altura fixa e com BoxFit.contain — respeita a proporção real da
+/// captura, sem esticar nem cortar retrato.
+class _ResponsePhoto extends StatelessWidget {
+  final String photoUrl;
+  final DateTime? capturedAt;
+  const _ResponsePhoto({required this.photoUrl, this.capturedAt});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FutureBuilder<String?>(
+          future: ReportExportService.freshSignedUrl(photoUrl),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Container(
+                height: 140,
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
+            final url = snapshot.data;
+            if (url == null) {
+              return Container(
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('Foto indisponível',
+                    style: Theme.of(context).textTheme.bodySmall),
+              );
+            }
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                url,
+                width: double.infinity,
+                fit: BoxFit.contain,
+                errorBuilder: (_, e, st) => Container(
+                  height: 48,
+                  alignment: Alignment.center,
+                  color: AppColors.background,
+                  child: Text('Foto indisponível',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ),
+              ),
+            );
+          },
+        ),
+        if (capturedAt != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Foto capturada em ${DateFormat('dd/MM/yy HH:mm').format(capturedAt!)}',
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: AppColors.textSecondary),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Card de não conformidade com observação e foto (signed URL re-gerada).
 class _NcCard extends StatelessWidget {
   final InspectionResponse response;
   final ChecklistItem? item;
+  final int? displayNumber;
 
-  const _NcCard({required this.response, this.item});
+  const _NcCard({required this.response, this.item, this.displayNumber});
 
   @override
   Widget build(BuildContext context) {
@@ -597,9 +730,18 @@ class _NcCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
           ],
-          Text(
-            item?.description ?? 'Item removido',
-            style: Theme.of(context).textTheme.titleSmall,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _ItemNumberBadge(number: displayNumber),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  item?.description ?? 'Item removido',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+            ],
           ),
           if (item?.nr32Reference != null) ...[
             const SizedBox(height: 2),
@@ -640,68 +782,10 @@ class _NcCard extends StatelessWidget {
           ],
           if (response.photoUrl != null) ...[
             const SizedBox(height: 8),
-            FutureBuilder<String?>(
-              future:
-                  ReportExportService.freshSignedUrl(response.photoUrl!),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Container(
-                    height: 140,
-                    decoration: BoxDecoration(
-                      color: AppColors.background,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  );
-                }
-                final url = snapshot.data;
-                if (url == null) {
-                  return Container(
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppColors.background,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text('Foto indisponível',
-                        style: Theme.of(context).textTheme.bodySmall),
-                  );
-                }
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    url,
-                    height: 160,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, e, st) => Container(
-                      height: 48,
-                      alignment: Alignment.center,
-                      color: AppColors.background,
-                      child: Text('Foto indisponível',
-                          style: Theme.of(context).textTheme.bodySmall),
-                    ),
-                  ),
-                );
-              },
+            _ResponsePhoto(
+              photoUrl: response.photoUrl!,
+              capturedAt: response.photoCapturedAt,
             ),
-            if (response.photoCapturedAt != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Foto capturada em ${DateFormat('dd/MM/yy HH:mm').format(response.photoCapturedAt!)}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: AppColors.textSecondary),
-                ),
-              ),
           ],
         ],
       ),

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:excel/excel.dart' as xls;
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -43,13 +44,17 @@ class ReportExportData {
     return compliant / total * 100;
   }
 
-  /// Respostas ordenadas pelo order_index do item do checklist.
+  /// Respostas ordenadas pelo order_index do item do checklist,
+  /// com desempate por checklistItemId (ordem deterministica).
   List<InspectionResponse> get orderedResponses {
     final list = List<InspectionResponse>.from(responses);
     list.sort((a, b) {
       final ia = items[a.checklistItemId]?.orderIndex ?? 0;
       final ib = items[b.checklistItemId]?.orderIndex ?? 0;
-      return ia.compareTo(ib);
+      final cmp = ia.compareTo(ib);
+      // Desempate estavel: order_index repetido (ou item removido caindo no
+      // fallback 0) nao pode gerar ordem diferente entre telas e exportacoes.
+      return cmp != 0 ? cmp : a.checklistItemId.compareTo(b.checklistItemId);
     });
     return list;
   }
@@ -67,7 +72,7 @@ class ReportExportService {
   static final _dateFmt = DateFormat('dd/MM/yyyy HH:mm', 'pt_BR');
 
   // Cores da identidade visual no espaço do PDF
-  static final _pdfPrimary = PdfColor.fromInt(0xFF1A56DB);
+  static final _pdfPrimary = PdfColor.fromInt(0xFF00448E);
   static final _pdfCompliant = PdfColor.fromInt(0xFF16A34A);
   static final _pdfNonCompliant = PdfColor.fromInt(0xFFDC2626);
   static final _pdfGray = PdfColor.fromInt(0xFF6B7280);
@@ -150,6 +155,12 @@ class ReportExportService {
       photoBytes[r.id] = await _downloadPhoto(r.photoUrl!);
     }
 
+    // Marca institucional do cabecalho.
+    final logoBytes =
+        (await rootBundle.load('assets/branding/icon_mark.png'))
+            .buffer
+            .asUint8List();
+
     final doc = pw.Document(
       title: 'Relatório de Inspeção NR-32 — ${data.checklistTitle}',
       author: 'InspecionaHU',
@@ -161,7 +172,7 @@ class ReportExportService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(36, 36, 36, 44),
-        header: (ctx) => _pdfHeader(data),
+        header: (ctx) => _pdfHeader(data, logoBytes),
         footer: (ctx) => _pdfFooter(ctx, generatedAt),
         build: (ctx) => [
           pw.SizedBox(height: 12),
@@ -205,7 +216,7 @@ class ReportExportService {
     return doc.save();
   }
 
-  static pw.Widget _pdfHeader(ReportExportData data) {
+  static pw.Widget _pdfHeader(ReportExportData data, Uint8List logoBytes) {
     return pw.Container(
       padding: const pw.EdgeInsets.only(bottom: 10),
       decoration: pw.BoxDecoration(
@@ -214,21 +225,8 @@ class ReportExportService {
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          // Ícone institucional simples
-          pw.Container(
-            width: 34,
-            height: 34,
-            alignment: pw.Alignment.center,
-            decoration: pw.BoxDecoration(
-              color: _pdfPrimary,
-              borderRadius: pw.BorderRadius.circular(8),
-            ),
-            child: pw.Text('HU',
-                style: pw.TextStyle(
-                    color: PdfColors.white,
-                    fontSize: 13,
-                    fontWeight: pw.FontWeight.bold)),
-          ),
+          // Marca institucional (HU-UFPI/EBSERH)
+          pw.Image(pw.MemoryImage(logoBytes), width: 34, height: 34),
           pw.SizedBox(width: 10),
           pw.Expanded(
             child: pw.Column(

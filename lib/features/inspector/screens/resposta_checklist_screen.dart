@@ -133,7 +133,8 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
           .select()
           .eq('checklist_id', _task!.checklistId)
           .eq('status', 'active')
-          .order('order_index');
+          .order('order_index')
+          .order('id');
       _items = (itemsData as List)
           .map((e) => ChecklistItem.fromJson(e as Map<String, dynamic>))
           .toList();

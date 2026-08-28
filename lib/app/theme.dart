@@ -49,7 +49,7 @@ class AppTheme {
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.dark,
         ),
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: GoogleFonts.publicSans(
           fontSize: 17,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
@@ -84,17 +84,17 @@ class AppTheme {
         filled: true,
         fillColor: AppColors.surface,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        labelStyle: GoogleFonts.inter(
+        labelStyle: GoogleFonts.publicSans(
           fontSize: 14,
           color: AppColors.textSecondary,
           fontWeight: FontWeight.w400,
         ),
-        floatingLabelStyle: GoogleFonts.inter(
+        floatingLabelStyle: GoogleFonts.publicSans(
           fontSize: 12,
           color: AppColors.primary,
           fontWeight: FontWeight.w500,
         ),
-        hintStyle: GoogleFonts.inter(
+        hintStyle: GoogleFonts.publicSans(
           fontSize: 14,
           color: AppColors.textDisabled,
         ),
@@ -122,7 +122,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(AppDimensions.radiusInput),
           borderSide: const BorderSide(color: AppColors.border, width: AppDimensions.borderWidth),
         ),
-        errorStyle: GoogleFonts.inter(
+        errorStyle: GoogleFonts.publicSans(
           fontSize: 12,
           color: AppColors.nonCompliant,
         ),
@@ -144,7 +144,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDimensions.radiusButton),
           ),
-          textStyle: GoogleFonts.inter(
+          textStyle: GoogleFonts.publicSans(
             fontSize: 15,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.1,
@@ -162,7 +162,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDimensions.radiusButton),
           ),
-          textStyle: GoogleFonts.inter(
+          textStyle: GoogleFonts.publicSans(
             fontSize: 15,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.1,
@@ -179,7 +179,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
-          textStyle: GoogleFonts.inter(
+          textStyle: GoogleFonts.publicSans(
             fontSize: 14,
             fontWeight: FontWeight.w500,
             letterSpacing: 0.1,
@@ -202,9 +202,9 @@ class AppTheme {
         unselectedLabelColor: AppColors.textSecondary,
         indicatorColor: AppColors.primary,
         indicatorSize: TabBarIndicatorSize.tab,
-        labelStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
+        labelStyle: GoogleFonts.publicSans(fontSize: 14, fontWeight: FontWeight.w600),
         unselectedLabelStyle:
-            GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w400),
+            GoogleFonts.publicSans(fontSize: 14, fontWeight: FontWeight.w400),
         dividerColor: AppColors.border,
       ),
 
@@ -216,15 +216,15 @@ class AppTheme {
         elevation: 0,
         type: BottomNavigationBarType.fixed,
         selectedLabelStyle:
-            GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+            GoogleFonts.publicSans(fontSize: 12, fontWeight: FontWeight.w600),
         unselectedLabelStyle:
-            GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w400),
+            GoogleFonts.publicSans(fontSize: 12, fontWeight: FontWeight.w400),
       ),
 
       // ── SnackBar: arredondado, sem elevation pesada ───────────────────────
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.textPrimary,
-        contentTextStyle: GoogleFonts.inter(
+        contentTextStyle: GoogleFonts.publicSans(
           color: Colors.white,
           fontSize: 14,
           fontWeight: FontWeight.w400,
@@ -250,7 +250,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        labelStyle: GoogleFonts.inter(
+        labelStyle: GoogleFonts.publicSans(
           fontSize: 12,
           fontWeight: FontWeight.w500,
         ),
@@ -263,12 +263,12 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: GoogleFonts.publicSans(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
         ),
-        contentTextStyle: GoogleFonts.inter(
+        contentTextStyle: GoogleFonts.publicSans(
           fontSize: 14,
           color: AppColors.textSecondary,
           height: 1.5,
@@ -295,7 +295,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(12),
           side: const BorderSide(color: AppColors.border, width: 0.5),
         ),
-        textStyle: GoogleFonts.inter(
+        textStyle: GoogleFonts.publicSans(
           fontSize: 14,
           color: AppColors.textPrimary,
         ),
@@ -307,9 +307,21 @@ class AppTheme {
 
   // ── Typography: Inter em todo o app ─────────────────────────────────────────
   static TextTheme _buildTextTheme() {
-    TextStyle inter(double size, FontWeight weight, Color color,
+    // Space Grotesk nos titulos de maior hierarquia; Public Sans no restante.
+    TextStyle display(double size, FontWeight weight, Color color,
         {double? height, double? spacing}) {
-      return GoogleFonts.inter(
+      return GoogleFonts.spaceGrotesk(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+        height: height,
+        letterSpacing: spacing,
+      );
+    }
+
+    TextStyle body(double size, FontWeight weight, Color color,
+        {double? height, double? spacing}) {
+      return GoogleFonts.publicSans(
         fontSize: size,
         fontWeight: weight,
         color: color,
@@ -319,27 +331,27 @@ class AppTheme {
     }
 
     return TextTheme(
-      displayLarge: inter(32, FontWeight.w700, AppColors.textPrimary,
+      displayLarge: display(32, FontWeight.w700, AppColors.textPrimary,
           height: 1.2, spacing: -0.8),
-      displayMedium: inter(28, FontWeight.w700, AppColors.textPrimary,
+      displayMedium: display(28, FontWeight.w700, AppColors.textPrimary,
           height: 1.2, spacing: -0.6),
-      headlineLarge: inter(24, FontWeight.w700, AppColors.textPrimary,
+      headlineLarge: display(24, FontWeight.w700, AppColors.textPrimary,
           height: 1.3, spacing: -0.5),
-      headlineMedium: inter(22, FontWeight.w600, AppColors.textPrimary,
+      headlineMedium: display(22, FontWeight.w600, AppColors.textPrimary,
           height: 1.3, spacing: -0.4),
-      headlineSmall: inter(18, FontWeight.w600, AppColors.textPrimary,
+      headlineSmall: display(18, FontWeight.w600, AppColors.textPrimary,
           height: 1.4, spacing: -0.3),
-      titleLarge: inter(16, FontWeight.w600, AppColors.textPrimary,
+      titleLarge: display(16, FontWeight.w600, AppColors.textPrimary,
           height: 1.4, spacing: -0.2),
-      titleMedium: inter(15, FontWeight.w500, AppColors.textPrimary, height: 1.4),
-      titleSmall: inter(14, FontWeight.w500, AppColors.textPrimary, height: 1.4),
-      bodyLarge: inter(15, FontWeight.w400, AppColors.textPrimary, height: 1.5),
+      titleMedium: body(15, FontWeight.w500, AppColors.textPrimary, height: 1.4),
+      titleSmall: body(14, FontWeight.w500, AppColors.textPrimary, height: 1.4),
+      bodyLarge: body(15, FontWeight.w400, AppColors.textPrimary, height: 1.5),
       bodyMedium:
-          inter(14, FontWeight.w400, AppColors.textSecondary, height: 1.5),
-      bodySmall: inter(12, FontWeight.w400, AppColors.textSecondary, height: 1.5),
-      labelLarge: inter(14, FontWeight.w500, AppColors.textPrimary),
-      labelMedium: inter(12, FontWeight.w500, AppColors.textSecondary),
-      labelSmall: inter(11, FontWeight.w400, AppColors.textSecondary),
+          body(14, FontWeight.w400, AppColors.textSecondary, height: 1.5),
+      bodySmall: body(12, FontWeight.w400, AppColors.textSecondary, height: 1.5),
+      labelLarge: body(14, FontWeight.w500, AppColors.textPrimary),
+      labelMedium: body(12, FontWeight.w500, AppColors.textSecondary),
+      labelSmall: body(11, FontWeight.w400, AppColors.textSecondary),
     );
   }
 }

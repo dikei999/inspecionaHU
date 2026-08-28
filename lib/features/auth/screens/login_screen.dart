@@ -6,7 +6,6 @@ import '../../../app/routes.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/config/demo_credentials.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../widgets/app_logo.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -66,7 +65,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(gradient: AppColors.heroGradient),
+        color: AppColors.background,
         child: CustomPaint(
           painter: _MedicalCrossPatternPainter(),
           child: SafeArea(
@@ -82,17 +81,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         // ── Identidade institucional ─────────────────────
-                        const Center(child: AppLogo(fontSize: 30, onDark: true)),
+                        Center(
+                          child: Image.asset(
+                            'assets/branding/logo_full.png',
+                            height: 90,
+                          ),
+                        ),
                         const SizedBox(height: 14),
                         Center(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 5),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.12),
+                              color: AppColors.primary50,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.22),
+                                color: AppColors.primary100,
                                 width: 0.8,
                               ),
                             ),
@@ -102,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: 1.4,
-                                color: Colors.white,
+                                color: AppColors.primary,
                               ),
                             ),
                           ),
@@ -113,7 +117,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             'Rede EBSERH · Hospitais Universitários',
                             style: TextStyle(
                               fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.75),
+                              color: AppColors.textSecondary,
                               fontWeight: FontWeight.w400,
                             ),
                           ),
@@ -126,7 +130,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           decoration: BoxDecoration(
                             color: AppColors.surface,
                             borderRadius: BorderRadius.circular(20),
-                            boxShadow: AppShadows.elevated,
+                            border: Border.all(
+                                color: AppColors.border, width: 0.5),
+                            boxShadow: AppShadows.card,
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -267,20 +273,19 @@ class _LoginScreenState extends State<LoginScreen> {
                               'Não tem conta?',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: Colors.white.withValues(alpha: 0.8),
+                                color: AppColors.textSecondary,
                               ),
                             ),
                             TextButton(
                               onPressed: () => context.push(AppRoutes.cadastro),
                               style: TextButton.styleFrom(
-                                foregroundColor: Colors.white,
+                                foregroundColor: AppColors.primary,
                               ),
                               child: const Text(
                                 'Criar conta',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   decoration: TextDecoration.underline,
-                                  decorationColor: Colors.white54,
                                 ),
                               ),
                             ),
@@ -292,7 +297,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             'Segurança do trabalho em serviços de saúde',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.white.withValues(alpha: 0.45),
+                              color: AppColors.textDisabled,
                               letterSpacing: 0.2,
                             ),
                           ),
@@ -323,9 +328,9 @@ class _DemoLoginCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: AppColors.surfaceSubtle,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -354,7 +359,7 @@ class _DemoLoginCard extends StatelessWidget {
                 'Login rápido para testes',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.white.withValues(alpha: 0.75),
+                  color: AppColors.textSecondary,
                 ),
               ),
             ],
@@ -406,8 +411,8 @@ class _DemoButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white,
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.4)),
+        foregroundColor: AppColors.primary,
+        side: const BorderSide(color: AppColors.borderStrong),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -418,12 +423,12 @@ class _DemoButton extends StatelessWidget {
   }
 }
 
-/// Padrão sutil de cruzes (motivo hospitalar) sobre o gradiente do login.
+/// Padrão sutil de cruzes (motivo hospitalar) sobre o fundo claro do login.
 class _MedicalCrossPatternPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.035)
+      ..color = AppColors.primary.withValues(alpha: 0.035)
       ..style = PaintingStyle.fill;
 
     const spacing = 72.0;
