@@ -10,6 +10,7 @@ import '../../../widgets/empty_state.dart';
 import '../../../widgets/notification_bell.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../shared/widgets/dashboard_header.dart';
 
 /// Task + dados de exibição (título do checklist e nome do setor).
 class _TaskView {
@@ -103,40 +104,77 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final profile = context.watch<AuthProvider>().profile;
+    final emAndamento =
+        _tasks.where((t) => t.task.status == 'in_progress').length;
+    final pendentes = _tasks.where((t) => t.task.status == 'pending').length;
+
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('Minhas Tarefas'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.calendar_month_outlined),
-            tooltip: 'Calendário',
-            onPressed: () => context.push(AppRoutes.inspectorCalendario),
+      body: Column(
+        children: [
+          // ── Header institucional azul ─────────────────────────────
+          DashboardHeader(
+            greeting: profile?.fullName != null
+                ? 'Olá, ${profile!.fullName.split(' ').first}'
+                : 'Minhas Tarefas',
+            subtitle: 'Minhas tarefas de inspeção',
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.calendar_month_outlined),
+                tooltip: 'Calendário',
+                onPressed: () => context.push(AppRoutes.inspectorCalendario),
+              ),
+              IconButton(
+                icon: const Icon(Icons.history_outlined),
+                tooltip: 'Histórico',
+                onPressed: () => context.push(AppRoutes.inspectorHistorico),
+              ),
+              const NotificationBell(),
+              IconButton(
+                icon: const Icon(Icons.person_outline),
+                tooltip: 'Perfil',
+                onPressed: () => context.push(AppRoutes.perfil),
+              ),
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'Sair',
+                onPressed: () => context.read<AuthProvider>().signOut(),
+              ),
+            ],
+            child: _loading
+                ? null
+                : Row(
+                    children: [
+                      Expanded(
+                        child: HeaderMetric(
+                          value: pendentes.toString(),
+                          label: 'Pendentes',
+                        ),
+                      ),
+                      Expanded(
+                        child: HeaderMetric(
+                          value: emAndamento.toString(),
+                          label: 'Em andamento',
+                        ),
+                      ),
+                      Expanded(
+                        child: HeaderMetric(
+                          value: _overdueCount.toString(),
+                          label: 'Atrasadas',
+                        ),
+                      ),
+                    ],
+                  ),
           ),
-          IconButton(
-            icon: const Icon(Icons.history_outlined),
-            tooltip: 'Histórico',
-            onPressed: () => context.push(AppRoutes.inspectorHistorico),
-          ),
-          const NotificationBell(),
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            tooltip: 'Perfil',
-            onPressed: () => context.push(AppRoutes.perfil),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sair',
-            onPressed: () => context.read<AuthProvider>().signOut(),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: _loading
-            ? const SkeletonList(itemHeight: 96)
-            : Column(
-                children: [
+
+          // ── Lista de tarefas ──────────────────────────────────────
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: _loading
+                  ? const SkeletonList(itemHeight: 96)
+                  : Column(
+                      children: [
                   // ── Filtros ──────────────────────────────────────────
                   if (_tasks.isNotEmpty)
                     Padding(
@@ -216,8 +254,11 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                             ),
                           ),
                   ),
-                ],
-              ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -9,6 +9,7 @@ import '../../../widgets/notification_bell.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../../widgets/stat_card.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../shared/widgets/dashboard_header.dart';
 import '../../shared/widgets/dashboard_nav_card.dart';
 
 /// Dashboard do Diretor — modelo "Setor como unidade central".
@@ -31,6 +32,7 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
   int _inspecoesHoje = 0;
   int _ncsAbertas = 0;
   int _setoresPendentes = 0;
+  String? _hospitalNome;
 
   // Agregados do donut de conformidade
   int _totalCompliant = 0;
@@ -55,6 +57,12 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
     final hospitalId = profile.hospitalId!;
 
     try {
+      final hosp = await _db
+          .from('hospitals')
+          .select('name')
+          .eq('id', hospitalId)
+          .maybeSingle();
+
       final reports = await _db
           .from('reports')
           .select('compliance_rate, compliant, non_compliant, not_applicable')
@@ -111,6 +119,7 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
 
       if (mounted) {
         setState(() {
+          _hospitalNome = hosp?['name'] as String?;
           _conformidade = conf;
           _inspecoesHoje = inspToday.length;
           _ncsAbertas = ncCount;
@@ -133,56 +142,50 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
     final profile = context.watch<AuthProvider>().profile;
 
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Dashboard'),
-            if (profile?.fullName != null)
-              Text(
-                'Olá, ${profile!.fullName.split(' ').first}',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: AppColors.textSecondary),
-              ),
-          ],
-        ),
-        actions: [
-          const NotificationBell(),
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            tooltip: 'Perfil',
-            onPressed: () => context.push(AppRoutes.perfil),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sair',
-            onPressed: () => auth.signOut(),
-          ),
-        ],
-      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.zero,
           children: [
+            // ── Header institucional azul ─────────────────────────────
+            DashboardHeader(
+              greeting: profile?.fullName != null
+                  ? 'Olá, ${profile!.fullName.split(' ').first}'
+                  : 'Olá',
+              subtitle: _hospitalNome ?? 'Painel do Diretor',
+              actions: [
+                const NotificationBell(),
+                IconButton(
+                  icon: const Icon(Icons.person_outline),
+                  tooltip: 'Perfil',
+                  onPressed: () => context.push(AppRoutes.perfil),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Sair',
+                  onPressed: () => auth.signOut(),
+                ),
+              ],
+              child: _loading
+                  ? null
+                  : ComplianceDonut(
+                      light: true,
+                      compliant: _totalCompliant,
+                      nonCompliant: _totalNonCompliant,
+                      notApplicable: _totalNotApplicable,
+                    ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Conteúdo ──────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
             if (_loading)
               const SkeletonDashboard()
             else ...[
-              // ── Conformidade geral: gráfico compacto no topo ──────────
-              ChartCard(
-                title: 'Conformidade geral',
-                subtitle: 'Itens respondidos em todas as inspeções',
-                child: ComplianceDonut(
-                  compliant: _totalCompliant,
-                  nonCompliant: _totalNonCompliant,
-                  notApplicable: _totalNotApplicable,
-                ),
-              ),
-              const SizedBox(height: 12),
-
               // ── Métricas ──────────────────────────────────────────────
               Row(
                 children: [
@@ -279,6 +282,10 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
               title: 'Templates & Configurações',
               subtitle: 'Templates locais, notificações e dados do hospital',
               onTap: () => context.push(AppRoutes.configuracoes),
+            ),
+            const SizedBox(height: 16),
+                ],
+              ),
             ),
           ],
         ),

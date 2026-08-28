@@ -64,11 +64,15 @@ class ComplianceDonut extends StatelessWidget {
   final int nonCompliant;
   final int notApplicable;
 
+  /// Versão clara para uso sobre fundo azul (header dos dashboards).
+  final bool light;
+
   const ComplianceDonut({
     super.key,
     required this.compliant,
     required this.nonCompliant,
     required this.notApplicable,
+    this.light = false,
   });
 
   double get _rate {
@@ -117,7 +121,9 @@ class ComplianceDonut extends StatelessWidget {
                           if (notApplicable > 0)
                             PieChartSectionData(
                               value: notApplicable.toDouble(),
-                              color: AppColors.borderStrong,
+                              color: light
+                                  ? Colors.white38
+                                  : AppColors.borderStrong,
                               radius: 22,
                               showTitle: false,
                             ),
@@ -125,7 +131,7 @@ class ComplianceDonut extends StatelessWidget {
                       : [
                           PieChartSectionData(
                             value: 1,
-                            color: AppColors.border,
+                            color: light ? Colors.white24 : AppColors.border,
                             radius: 22,
                             showTitle: false,
                           ),
@@ -139,17 +145,21 @@ class ComplianceDonut extends StatelessWidget {
                     hasData ? '${_rate.toStringAsFixed(1)}%' : '—',
                     style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                           fontWeight: FontWeight.w800,
-                          color: hasData ? rateColor : AppColors.textDisabled,
+                          color: light
+                              ? Colors.white
+                              : hasData
+                                  ? rateColor
+                                  : AppColors.textDisabled,
                           height: 1,
                         ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'conformidade',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(fontSize: 11),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontSize: 11,
+                          color: light ? Colors.white70 : null,
+                        ),
                   ),
                 ],
               ),
@@ -163,17 +173,20 @@ class ComplianceDonut extends StatelessWidget {
             _LegendItem(
                 color: AppColors.compliant,
                 label: 'Conforme',
-                count: compliant),
+                count: compliant,
+                light: light),
             const SizedBox(width: 16),
             _LegendItem(
                 color: AppColors.nonCompliant,
                 label: 'Não conforme',
-                count: nonCompliant),
+                count: nonCompliant,
+                light: light),
             const SizedBox(width: 16),
             _LegendItem(
-                color: AppColors.borderStrong,
+                color: light ? Colors.white38 : AppColors.borderStrong,
                 label: 'N/A',
-                count: notApplicable),
+                count: notApplicable,
+                light: light),
           ],
         ),
       ],
@@ -185,9 +198,14 @@ class _LegendItem extends StatelessWidget {
   final Color color;
   final String label;
   final int count;
+  final bool light;
 
-  const _LegendItem(
-      {required this.color, required this.label, required this.count});
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    required this.count,
+    this.light = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -205,10 +223,12 @@ class _LegendItem extends StatelessWidget {
         const SizedBox(width: 5),
         Text(
           '$label · $count',
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(fontSize: 11.5, color: AppColors.textSecondary),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontSize: 11.5,
+                color: light
+                    ? Colors.white.withValues(alpha: 0.85)
+                    : AppColors.textSecondary,
+              ),
         ),
       ],
     );

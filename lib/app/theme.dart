@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_dimensions.dart';
 
 class AppTheme {
   AppTheme._();
+
+  /// Família dos títulos (display/headline/titleLarge/AppBar).
+  static const String fontDisplay = 'Sora';
+
+  /// Família do corpo (body, labels, botões, inputs, chips, tabs, nav).
+  static const String fontBody = 'Manrope';
 
   static ThemeData get lightTheme {
     final colorScheme = ColorScheme.fromSeed(
@@ -26,6 +31,7 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.background,
+      fontFamily: fontBody,
 
       // ── Transições de página suaves (fade-forward Material 3) ─────────────
       pageTransitionsTheme: const PageTransitionsTheme(
@@ -39,36 +45,37 @@ class AppTheme {
       ),
 
       // ── AppBar: fundo branco, sem elevation, ícones azuis ──────────────────
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        systemOverlayStyle: const SystemUiOverlayStyle(
+        systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.dark,
         ),
-        titleTextStyle: GoogleFonts.publicSans(
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
+        titleTextStyle: TextStyle(
+          fontFamily: fontDisplay,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
           color: AppColors.textPrimary,
-          letterSpacing: -0.2,
+          letterSpacing: -0.3,
         ),
-        iconTheme: const IconThemeData(
+        iconTheme: IconThemeData(
           color: AppColors.primary,
           size: 24,
         ),
-        actionsIconTheme: const IconThemeData(
+        actionsIconTheme: IconThemeData(
           color: AppColors.primary,
           size: 24,
         ),
-        shape: const Border(
+        shape: Border(
           bottom: BorderSide(color: AppColors.border, width: 0.5),
         ),
       ),
 
-      // ── Cards: fundo branco, elevation sutil, borda fina ──────────────────
+      // ── Cards: fundo branco, borda fina (sombra via AppShadows nos widgets) ─
       cardTheme: CardThemeData(
         color: AppColors.surface,
         elevation: 0,
@@ -84,17 +91,20 @@ class AppTheme {
         filled: true,
         fillColor: AppColors.surface,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        labelStyle: GoogleFonts.publicSans(
+        labelStyle: const TextStyle(
+          fontFamily: fontBody,
           fontSize: 14,
           color: AppColors.textSecondary,
           fontWeight: FontWeight.w400,
         ),
-        floatingLabelStyle: GoogleFonts.publicSans(
+        floatingLabelStyle: const TextStyle(
+          fontFamily: fontBody,
           fontSize: 12,
           color: AppColors.primary,
           fontWeight: FontWeight.w500,
         ),
-        hintStyle: GoogleFonts.publicSans(
+        hintStyle: const TextStyle(
+          fontFamily: fontBody,
           fontSize: 14,
           color: AppColors.textDisabled,
         ),
@@ -122,7 +132,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(AppDimensions.radiusInput),
           borderSide: const BorderSide(color: AppColors.border, width: AppDimensions.borderWidth),
         ),
-        errorStyle: GoogleFonts.publicSans(
+        errorStyle: const TextStyle(
+          fontFamily: fontBody,
           fontSize: 12,
           color: AppColors.nonCompliant,
         ),
@@ -137,16 +148,19 @@ class AppTheme {
           foregroundColor: Colors.white,
           disabledBackgroundColor: AppColors.border,
           disabledForegroundColor: AppColors.textDisabled,
-          elevation: 0,
-          shadowColor: Colors.transparent,
+          // Glow sutil da cor primária nos CTAs (AppShadows.primaryGlow
+          // cobre os casos customizados; aqui o equivalente via elevation).
+          elevation: 2,
+          shadowColor: AppColors.primary.withValues(alpha: 0.35),
           minimumSize: const Size(double.infinity, AppDimensions.buttonHeight),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDimensions.radiusButton),
           ),
-          textStyle: GoogleFonts.publicSans(
+          textStyle: const TextStyle(
+            fontFamily: fontBody,
             fontSize: 15,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
             letterSpacing: 0.1,
           ),
         ),
@@ -162,7 +176,8 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDimensions.radiusButton),
           ),
-          textStyle: GoogleFonts.publicSans(
+          textStyle: const TextStyle(
+            fontFamily: fontBody,
             fontSize: 15,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.1,
@@ -179,9 +194,10 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
-          textStyle: GoogleFonts.publicSans(
+          textStyle: const TextStyle(
+            fontFamily: fontBody,
             fontSize: 14,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w600,
             letterSpacing: 0.1,
           ),
         ),
@@ -197,37 +213,39 @@ class AppTheme {
       ),
 
       // ── TabBar: indicador azul, texto seco ───────────────────────────────
-      tabBarTheme: TabBarThemeData(
+      tabBarTheme: const TabBarThemeData(
         labelColor: AppColors.primary,
         unselectedLabelColor: AppColors.textSecondary,
         indicatorColor: AppColors.primary,
         indicatorSize: TabBarIndicatorSize.tab,
-        labelStyle: GoogleFonts.publicSans(fontSize: 14, fontWeight: FontWeight.w600),
-        unselectedLabelStyle:
-            GoogleFonts.publicSans(fontSize: 14, fontWeight: FontWeight.w400),
+        labelStyle: TextStyle(
+            fontFamily: fontBody, fontSize: 14, fontWeight: FontWeight.w700),
+        unselectedLabelStyle: TextStyle(
+            fontFamily: fontBody, fontSize: 14, fontWeight: FontWeight.w500),
         dividerColor: AppColors.border,
       ),
 
       // ── BottomNavigationBar ───────────────────────────────────────────────
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: AppColors.surface,
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.textSecondary,
         elevation: 0,
         type: BottomNavigationBarType.fixed,
-        selectedLabelStyle:
-            GoogleFonts.publicSans(fontSize: 12, fontWeight: FontWeight.w600),
-        unselectedLabelStyle:
-            GoogleFonts.publicSans(fontSize: 12, fontWeight: FontWeight.w400),
+        selectedLabelStyle: TextStyle(
+            fontFamily: fontBody, fontSize: 12, fontWeight: FontWeight.w700),
+        unselectedLabelStyle: TextStyle(
+            fontFamily: fontBody, fontSize: 12, fontWeight: FontWeight.w500),
       ),
 
       // ── SnackBar: arredondado, sem elevation pesada ───────────────────────
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.textPrimary,
-        contentTextStyle: GoogleFonts.publicSans(
+        contentTextStyle: const TextStyle(
+          fontFamily: fontBody,
           color: Colors.white,
           fontSize: 14,
-          fontWeight: FontWeight.w400,
+          fontWeight: FontWeight.w500,
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
@@ -250,9 +268,10 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        labelStyle: GoogleFonts.publicSans(
+        labelStyle: const TextStyle(
+          fontFamily: fontBody,
           fontSize: 12,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
         ),
         side: BorderSide.none,
       ),
@@ -263,12 +282,15 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        titleTextStyle: GoogleFonts.publicSans(
+        titleTextStyle: const TextStyle(
+          fontFamily: fontDisplay,
           fontSize: 18,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: AppColors.textPrimary,
+          letterSpacing: -0.3,
         ),
-        contentTextStyle: GoogleFonts.publicSans(
+        contentTextStyle: const TextStyle(
+          fontFamily: fontBody,
           fontSize: 14,
           color: AppColors.textSecondary,
           height: 1.5,
@@ -295,7 +317,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(12),
           side: const BorderSide(color: AppColors.border, width: 0.5),
         ),
-        textStyle: GoogleFonts.publicSans(
+        textStyle: const TextStyle(
+          fontFamily: fontBody,
           fontSize: 14,
           color: AppColors.textPrimary,
         ),
@@ -305,12 +328,12 @@ class AppTheme {
     );
   }
 
-  // ── Typography: Inter em todo o app ─────────────────────────────────────────
+  // ── Typography: Sora nos títulos, Manrope no corpo (fontes embutidas) ──────
   static TextTheme _buildTextTheme() {
-    // Space Grotesk nos titulos de maior hierarquia; Public Sans no restante.
     TextStyle display(double size, FontWeight weight, Color color,
         {double? height, double? spacing}) {
-      return GoogleFonts.spaceGrotesk(
+      return TextStyle(
+        fontFamily: fontDisplay,
         fontSize: size,
         fontWeight: weight,
         color: color,
@@ -321,7 +344,8 @@ class AppTheme {
 
     TextStyle body(double size, FontWeight weight, Color color,
         {double? height, double? spacing}) {
-      return GoogleFonts.publicSans(
+      return TextStyle(
+        fontFamily: fontBody,
         fontSize: size,
         fontWeight: weight,
         color: color,
@@ -331,27 +355,27 @@ class AppTheme {
     }
 
     return TextTheme(
-      displayLarge: display(32, FontWeight.w700, AppColors.textPrimary,
+      displayLarge: display(32, FontWeight.w800, AppColors.textPrimary,
           height: 1.2, spacing: -0.8),
-      displayMedium: display(28, FontWeight.w700, AppColors.textPrimary,
+      displayMedium: display(28, FontWeight.w800, AppColors.textPrimary,
           height: 1.2, spacing: -0.6),
-      headlineLarge: display(24, FontWeight.w700, AppColors.textPrimary,
+      headlineLarge: display(24, FontWeight.w800, AppColors.textPrimary,
           height: 1.3, spacing: -0.5),
-      headlineMedium: display(22, FontWeight.w600, AppColors.textPrimary,
-          height: 1.3, spacing: -0.4),
-      headlineSmall: display(18, FontWeight.w600, AppColors.textPrimary,
+      headlineMedium: display(22, FontWeight.w800, AppColors.textPrimary,
+          height: 1.3, spacing: -0.5),
+      headlineSmall: display(18, FontWeight.w700, AppColors.textPrimary,
           height: 1.4, spacing: -0.3),
-      titleLarge: display(16, FontWeight.w600, AppColors.textPrimary,
+      titleLarge: display(16, FontWeight.w700, AppColors.textPrimary,
           height: 1.4, spacing: -0.2),
-      titleMedium: body(15, FontWeight.w500, AppColors.textPrimary, height: 1.4),
-      titleSmall: body(14, FontWeight.w500, AppColors.textPrimary, height: 1.4),
+      titleMedium: body(15, FontWeight.w600, AppColors.textPrimary, height: 1.4),
+      titleSmall: body(14, FontWeight.w600, AppColors.textPrimary, height: 1.4),
       bodyLarge: body(15, FontWeight.w400, AppColors.textPrimary, height: 1.5),
       bodyMedium:
           body(14, FontWeight.w400, AppColors.textSecondary, height: 1.5),
       bodySmall: body(12, FontWeight.w400, AppColors.textSecondary, height: 1.5),
-      labelLarge: body(14, FontWeight.w500, AppColors.textPrimary),
+      labelLarge: body(14, FontWeight.w600, AppColors.textPrimary),
       labelMedium: body(12, FontWeight.w500, AppColors.textSecondary),
-      labelSmall: body(11, FontWeight.w400, AppColors.textSecondary),
+      labelSmall: body(11, FontWeight.w500, AppColors.textSecondary),
     );
   }
 }

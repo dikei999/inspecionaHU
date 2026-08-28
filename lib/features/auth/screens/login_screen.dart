@@ -84,10 +84,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         Center(
                           child: Image.asset(
                             'assets/branding/logo_full.png',
-                            height: 90,
+                            height: 116,
                           ),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 20),
                         Center(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
@@ -105,7 +105,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w700,
-                                letterSpacing: 1.4,
+                                letterSpacing: 1.0,
                                 color: AppColors.primary,
                               ),
                             ),
@@ -412,7 +412,8 @@ class _DemoButton extends StatelessWidget {
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         foregroundColor: AppColors.primary,
-        side: const BorderSide(color: AppColors.borderStrong),
+        backgroundColor: Colors.white,
+        side: const BorderSide(color: AppColors.primary200),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,

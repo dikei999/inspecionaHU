@@ -51,7 +51,6 @@ dependencies:
   # Utilitários
   intl: ^0.20.1
   uuid: ^4.5.1
-  google_fonts: ^8.1.0
   fl_chart: ^1.2.0
   printing: ^5.14.3
   share_plus: ^13.2.0
@@ -71,3 +70,25 @@ flutter:
 
   assets:
     - assets/branding/
+
+  fonts:
+    - family: Sora
+      fonts:
+        - asset: assets/fonts/Sora-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Sora-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Sora-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Sora-ExtraBold.ttf
+          weight: 800
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Manrope-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Manrope-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Manrope-Bold.ttf
+          weight: 700

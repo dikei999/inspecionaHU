@@ -7,8 +7,8 @@ import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../widgets/charts.dart';
 import '../../../widgets/skeleton_loader.dart';
-import '../../../widgets/stat_card.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../shared/widgets/dashboard_header.dart';
 
 class SuperAdminDashboardScreen extends StatefulWidget {
   const SuperAdminDashboardScreen({super.key});
@@ -91,91 +91,74 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.read<AuthProvider>();
+    final profile = context.watch<AuthProvider>().profile;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Super Admin'),
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            tooltip: 'Perfil',
-            onPressed: () => context.push(AppRoutes.perfil),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sair',
-            onPressed: () => auth.signOut(),
-          ),
-        ],
-      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.zero,
           children: [
-            // ── Header ────────────────────────────────────────────────
-            Text(
-              'Visão geral',
-              style: Theme.of(context).textTheme.titleLarge,
+            // ── Header institucional azul ─────────────────────────────
+            DashboardHeader(
+              greeting: profile?.fullName != null
+                  ? 'Olá, ${profile!.fullName.split(' ').first}'
+                  : 'Super Admin',
+              subtitle: 'Administração global · Rede EBSERH',
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.person_outline),
+                  tooltip: 'Perfil',
+                  onPressed: () => context.push(AppRoutes.perfil),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  tooltip: 'Sair',
+                  onPressed: () => auth.signOut(),
+                ),
+              ],
+              child: _loading
+                  ? null
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: HeaderMetric(
+                            value: _totalHospitais.toString(),
+                            label: 'Hospitais ativos',
+                          ),
+                        ),
+                        Expanded(
+                          child: HeaderMetric(
+                            value: _totalUsuarios.toString(),
+                            label: 'Usuários',
+                          ),
+                        ),
+                        Expanded(
+                          child: HeaderMetric(
+                            value: _semVinculo.toString(),
+                            label: 'Sem vínculo',
+                          ),
+                        ),
+                        Expanded(
+                          child: HeaderMetric(
+                            value: _totalTemplates.toString(),
+                            label: 'Templates',
+                          ),
+                        ),
+                      ],
+                    ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
 
-            // ── Cards de métricas ──────────────────────────────────────
+            // ── Conteúdo ──────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
             if (_loading)
               const SkeletonDashboard()
-            else ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: StatCard(
-                      icon: Icons.local_hospital_outlined,
-                      label: 'Hospitais',
-                      value: _totalHospitais.toString(),
-                      subtitle: 'ativos',
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: StatCard(
-                      icon: Icons.people_outline,
-                      label: 'Usuários',
-                      value: _totalUsuarios.toString(),
-                      subtitle: 'cadastrados',
-                      color: AppColors.compliant,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: StatCard(
-                      icon: Icons.link_off,
-                      label: 'Sem vínculo',
-                      value: _semVinculo.toString(),
-                      subtitle: 'aguardando',
-                      color: _semVinculo > 0
-                          ? AppColors.pending
-                          : AppColors.compliant,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: StatCard(
-                      icon: Icons.checklist_outlined,
-                      label: 'Templates',
-                      value: _totalTemplates.toString(),
-                      subtitle: 'globais NR-32',
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
+            else
               // ── Gráfico: distribuição de usuários ──────────────────
               ChartCard(
                 title: 'Usuários por perfil',
@@ -186,7 +169,6 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                   tooltipSuffix: ' usuário(s)',
                 ),
               ),
-            ],
 
             const SizedBox(height: 28),
 
@@ -238,6 +220,10 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                 onTap: () => context.push(AppRoutes.painelDemo),
               ),
             ],
+            const SizedBox(height: 16),
+                ],
+              ),
+            ),
           ],
         ),
       ),
