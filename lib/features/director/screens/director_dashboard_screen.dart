@@ -4,13 +4,17 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/charts.dart';
 import '../../../widgets/notification_bell.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../../widgets/stat_card.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../shared/widgets/dashboard_nav_card.dart';
 
+/// Dashboard do Diretor — modelo "Setor como unidade central".
+/// Apenas 4 destinos: Setores, Equipe, Relatórios & Análises e
+/// Templates & Configurações. Checklists, tarefas, calendário e vínculos
+/// passaram a viver dentro do setor (DetalhesSetorScreen).
 class DirectorDashboardScreen extends StatefulWidget {
   const DirectorDashboardScreen({super.key});
 
@@ -28,12 +32,10 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
   int _ncsAbertas = 0;
   int _setoresPendentes = 0;
 
-  // Agregados para os gráficos
+  // Agregados do donut de conformidade
   int _totalCompliant = 0;
   int _totalNonCompliant = 0;
   int _totalNotApplicable = 0;
-  List<double> _inspecoesPorDia = List.filled(7, 0);
-  List<String> _diasLabels = List.filled(7, '');
 
   @override
   void initState() {
@@ -55,8 +57,7 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
     try {
       final reports = await _db
           .from('reports')
-          .select(
-              'compliance_rate, compliant, non_compliant, not_applicable')
+          .select('compliance_rate, compliant, non_compliant, not_applicable')
           .eq('hospital_id', hospitalId);
 
       double conf = 0;
@@ -81,33 +82,6 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
           .eq('hospital_id', hospitalId)
           .gte('submitted_at', '${todayStr}T00:00:00')
           .lt('submitted_at', '${todayStr}T23:59:59');
-
-      // Inspeções enviadas nos últimos 7 dias (para o gráfico de barras)
-      final weekAgo = today.subtract(const Duration(days: 6));
-      final weekAgoStr =
-          '${weekAgo.year}-${weekAgo.month.toString().padLeft(2, '0')}-${weekAgo.day.toString().padLeft(2, '0')}';
-      final inspWeek = await _db
-          .from('inspections')
-          .select('submitted_at')
-          .eq('hospital_id', hospitalId)
-          .gte('submitted_at', '${weekAgoStr}T00:00:00');
-
-      final porDia = List<double>.filled(7, 0);
-      final labels = List<String>.filled(7, '');
-      const weekdayNames = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
-      for (int i = 0; i < 7; i++) {
-        final day = today.subtract(Duration(days: 6 - i));
-        labels[i] = weekdayNames[day.weekday - 1];
-      }
-      for (final insp in inspWeek) {
-        final submitted = AppDateUtils.parseDate(insp['submitted_at'] as String?);
-        if (submitted == null) continue;
-        final diff = DateTime(today.year, today.month, today.day)
-            .difference(
-                DateTime(submitted.year, submitted.month, submitted.day))
-            .inDays;
-        if (diff >= 0 && diff < 7) porDia[6 - diff] += 1;
-      }
 
       final openInspections = await _db
           .from('inspections')
@@ -144,8 +118,6 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
           _totalCompliant = sumC;
           _totalNonCompliant = sumNc;
           _totalNotApplicable = sumNa;
-          _inspecoesPorDia = porDia;
-          _diasLabels = labels;
           _loading = false;
         });
       }
@@ -161,11 +133,6 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
     final profile = context.watch<AuthProvider>().profile;
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(AppRoutes.convidarUsuario),
-        icon: const Icon(Icons.person_add_alt_1),
-        label: const Text('Convidar usuário'),
-      ),
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: Column(
@@ -201,10 +168,22 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // ── Métricas ─────────────────────────────────────────────
             if (_loading)
               const SkeletonDashboard()
             else ...[
+              // ── Conformidade geral: gráfico compacto no topo ──────────
+              ChartCard(
+                title: 'Conformidade geral',
+                subtitle: 'Itens respondidos em todas as inspeções',
+                child: ComplianceDonut(
+                  compliant: _totalCompliant,
+                  nonCompliant: _totalNonCompliant,
+                  notApplicable: _totalNotApplicable,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // ── Métricas ──────────────────────────────────────────────
               Row(
                 children: [
                   Expanded(
@@ -256,208 +235,52 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-
-              // ── Gráficos ────────────────────────────────────────────
-              ChartCard(
-                title: 'Conformidade geral',
-                subtitle: 'Itens respondidos em todas as inspeções',
-                child: ComplianceDonut(
-                  compliant: _totalCompliant,
-                  nonCompliant: _totalNonCompliant,
-                  notApplicable: _totalNotApplicable,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ChartCard(
-                title: 'Inspeções na semana',
-                subtitle: 'Enviadas nos últimos 7 dias',
-                child: SingleSeriesBarChart(
-                  values: _inspecoesPorDia,
-                  labels: _diasLabels,
-                  tooltipSuffix: ' inspeção(ões)',
-                ),
-              ),
             ],
 
             const SizedBox(height: 28),
 
-            // ── Navegação ─────────────────────────────────────────────
+            // ── Navegação: 4 destinos ─────────────────────────────────
             Text('Gestão', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
 
-            _buildNavGrid(context),
+            DashboardNavCard(
+              icon: Icons.domain_outlined,
+              color: AppColors.primary,
+              title: 'Setores',
+              subtitle:
+                  'Checklists, tarefas, equipe e histórico de cada setor',
+              onTap: () async {
+                await context.push(AppRoutes.gestaoSetores);
+                _load();
+              },
+            ),
+            DashboardNavCard(
+              icon: Icons.people_outline,
+              color: AppColors.compliant,
+              title: 'Equipe',
+              subtitle:
+                  'Membros, convites, pedidos e acesso compartilhado',
+              onTap: () async {
+                await context.push(AppRoutes.gestaoEquipe);
+                _load();
+              },
+            ),
+            DashboardNavCard(
+              icon: Icons.insights_outlined,
+              color: AppColors.pending,
+              title: 'Relatórios & Análises',
+              subtitle: 'Conformidade, NCs e inspeções concluídas',
+              badge: _ncsAbertas,
+              onTap: () => context.push(AppRoutes.relatoriosAnalises),
+            ),
+            DashboardNavCard(
+              icon: Icons.settings_outlined,
+              color: AppColors.primary,
+              title: 'Templates & Configurações',
+              subtitle: 'Templates locais, notificações e dados do hospital',
+              onTap: () => context.push(AppRoutes.configuracoes),
+            ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavGrid(BuildContext context) {
-    final items = [
-      _NavItem(
-        icon: Icons.domain_outlined,
-        label: 'Setores',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.gestaoSetores),
-      ),
-      _NavItem(
-        icon: Icons.people_outline,
-        label: 'Equipe',
-        color: AppColors.compliant,
-        onTap: () => context.push(AppRoutes.gestaoEquipe),
-      ),
-      _NavItem(
-        icon: Icons.checklist_outlined,
-        label: 'Novo Checklist',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.novoChecklist),
-      ),
-      _NavItem(
-        icon: Icons.description_outlined,
-        label: 'Templates Locais',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.templatesLocais),
-      ),
-      _NavItem(
-        icon: Icons.assignment_add,
-        label: 'Atribuir Tarefa',
-        color: AppColors.pending,
-        onTap: () => context.push(AppRoutes.atribuirTarefa),
-      ),
-      _NavItem(
-        icon: Icons.view_kanban_outlined,
-        label: 'Quadro de Tarefas',
-        color: AppColors.pending,
-        badge: _setoresPendentes,
-        onTap: () => context.push(AppRoutes.quadroTarefasGestao),
-      ),
-      _NavItem(
-        icon: Icons.calendar_month_outlined,
-        label: 'Calendário',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.calendarioInstitucional),
-      ),
-      _NavItem(
-        icon: Icons.share_outlined,
-        label: 'Acesso Compartilhado',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.acessoCompartilhado),
-      ),
-      _NavItem(
-        icon: Icons.approval_outlined,
-        label: 'Pedidos de Acesso',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.pedidosAcesso),
-      ),
-      _NavItem(
-        icon: Icons.outgoing_mail,
-        label: 'Convites Enviados',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.convitesEnviados),
-      ),
-    ];
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 1.0,
-      ),
-      itemCount: items.length,
-      itemBuilder: (context, i) => _NavTile(item: items[i]),
-    );
-  }
-}
-
-class _NavItem {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final int badge;
-  final VoidCallback onTap;
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.color,
-    this.badge = 0,
-    required this.onTap,
-  });
-}
-
-class _NavTile extends StatelessWidget {
-  final _NavItem item;
-  const _NavTile({required this.item});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: item.onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border, width: 0.5),
-            boxShadow: AppShadows.card,
-          ),
-          child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: item.color.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(item.icon, color: item.color, size: 22),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      item.label,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: AppColors.textPrimary,
-                            height: 1.3,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              if (item.badge > 0)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: AppColors.pending,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      item.badge.toString(),
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-            ],
-          ),
         ),
       ),
     );

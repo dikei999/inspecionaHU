@@ -7,6 +7,7 @@ import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/task.dart';
+import '../../../widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class CalendarioInstitucionalScreen extends StatefulWidget {
@@ -92,6 +93,21 @@ class _CalendarioInstitucionalScreenState
       _selectedDay = null;
     });
     _load();
+  }
+
+  /// Cor da barra lateral do card de tarefa (status individual).
+  Color _statusColor(Task task) {
+    if (task.isOverdue) return AppColors.statusOverdue;
+    switch (task.status) {
+      case 'validated':
+        return AppColors.statusValidated;
+      case 'submitted':
+        return AppColors.statusSubmitted;
+      case 'in_progress':
+        return AppColors.statusInProgress;
+      default:
+        return AppColors.statusPending;
+    }
   }
 
   Color _dayColor(List<Task> tasks) {
@@ -284,18 +300,17 @@ class _CalendarioInstitucionalScreenState
                             width: 4,
                             height: 40,
                             decoration: BoxDecoration(
-                              color: task.isOverdue
-                                  ? AppColors.statusOverdue
-                                  : AppColors.statusPending,
+                              color: _statusColor(task),
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
-                          title: Text('Tarefa — ${task.checklistId}',
+                          title: Text('Tarefa ${task.displayCode}',
                               style:
                                   Theme.of(context).textTheme.titleMedium),
-                          subtitle: Text(task.isOverdue
-                              ? 'ATRASADO'
-                              : task.status),
+                          subtitle: StatusBadge(
+                            status: task.isOverdue ? 'overdue' : task.status,
+                            compact: true,
+                          ),
                           trailing: task.status == 'submitted' ||
                                   task.status == 'validated'
                               ? IconButton(

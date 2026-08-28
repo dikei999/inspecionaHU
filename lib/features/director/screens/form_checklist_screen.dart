@@ -13,7 +13,15 @@ import '../../auth/providers/auth_provider.dart';
 class FormChecklistScreen extends StatefulWidget {
   final String? checklistId; // null = criar novo
 
-  const FormChecklistScreen({super.key, this.checklistId});
+  /// Setor pré-selecionado — usado quando a tela é aberta a partir da aba
+  /// "Checklists" de um setor. Ignorado na edição (o setor é imutável lá).
+  final String? initialSectorId;
+
+  const FormChecklistScreen({
+    super.key,
+    this.checklistId,
+    this.initialSectorId,
+  });
 
   @override
   State<FormChecklistScreen> createState() => _FormChecklistScreenState();
@@ -80,6 +88,11 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
         setState(() {
           _setores = setoresData.map(Sector.fromJson).toList();
           _templates = templatesData.map(ChecklistTemplate.fromJson).toList();
+          if (!_isEdit && widget.initialSectorId != null) {
+            _setorSelecionado = _setores
+                .where((s) => s.id == widget.initialSectorId)
+                .firstOrNull;
+          }
         });
       }
 

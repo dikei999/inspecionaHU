@@ -40,11 +40,7 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
     }
 
     try {
-      final setores = await _db
-          .from('sectors')
-          .select()
-          .eq('hospital_id', hospitalId)
-          .order('name');
+      final setores = await _loadSetores(hospitalId);
 
       final ownerIds = setores
           .map((s) => s['owner_supervisor_id'] as String?)
@@ -85,6 +81,55 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Diretor vê todos os setores do hospital.
+  /// Supervisor vê apenas onde é owner ou tem sector_access (regra do card
+  /// "Setores" do dashboard do Supervisor).
+  Future<List<Map<String, dynamic>>> _loadSetores(String hospitalId) async {
+    final profile = context.read<AuthProvider>().profile;
+    if (profile?.role != 'supervisor') {
+      final data = await _db
+          .from('sectors')
+          .select()
+          .eq('hospital_id', hospitalId)
+          .order('name');
+      return (data as List).cast<Map<String, dynamic>>();
+    }
+
+    final owned = await _db
+        .from('sectors')
+        .select()
+        .eq('hospital_id', hospitalId)
+        .eq('owner_supervisor_id', profile!.id);
+
+    final accessRows = await _db
+        .from('sector_access')
+        .select('sector_id')
+        .eq('supervisor_id', profile.id)
+        .eq('can_edit', true);
+    final accessIds =
+        (accessRows as List).map((r) => r['sector_id'] as String).toList();
+
+    final byId = <String, Map<String, dynamic>>{
+      for (final e in (owned as List).cast<Map<String, dynamic>>())
+        (e['id'] as String): e,
+    };
+
+    if (accessIds.isNotEmpty) {
+      final shared = await _db
+          .from('sectors')
+          .select()
+          .eq('hospital_id', hospitalId)
+          .inFilter('id', accessIds);
+      for (final e in (shared as List).cast<Map<String, dynamic>>()) {
+        byId[e['id'] as String] = e;
+      }
+    }
+
+    final list = byId.values.toList()
+      ..sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+    return list;
   }
 
   Future<void> _toggleStatus(Sector sector) async {
@@ -174,6 +219,11 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
                         final s = item.sector;
                         return Card(
                           child: ListTile(
+                            onTap: () async {
+                              await context
+                                  .push(AppRoutes.detalhesSetor(s.id));
+                              _load();
+                            },
                             leading: CircleAvatar(
                               backgroundColor: s.isActive
                                   ? AppColors.primary.withAlpha(30)
@@ -210,15 +260,25 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
                               ],
                             ),
                             isThreeLine: s.nr32Category != null,
+                            // Sem opção "Apagar": setor é sempre soft delete.
                             trailing: PopupMenuButton<String>(
                               onSelected: (v) {
+                                if (v == 'detalhes') {
+                                  context
+                                      .push(AppRoutes.detalhesSetor(s.id))
+                                      .then((_) => _load());
+                                }
                                 if (v == 'edit') {
-                                  context.push(AppRoutes.editarSetor(s.id))
+                                  context
+                                      .push(AppRoutes.editarSetor(s.id))
                                       .then((_) => _load());
                                 }
                                 if (v == 'toggle') _toggleStatus(s);
                               },
                               itemBuilder: (_) => [
+                                const PopupMenuItem(
+                                    value: 'detalhes',
+                                    child: Text('Abrir detalhes')),
                                 const PopupMenuItem(
                                     value: 'edit', child: Text('Editar')),
                                 PopupMenuItem(

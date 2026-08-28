@@ -10,6 +10,9 @@ import '../../../core/models/sector.dart';
 import '../../../core/services/audit_service.dart';
 import '../../../core/utils/cpf_utils.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../shared/screens/convites_enviados_screen.dart';
+import 'acesso_compartilhado_screen.dart';
+import 'pedidos_acesso_screen.dart';
 
 class GestaoEquipeScreen extends StatefulWidget {
   const GestaoEquipeScreen({super.key});
@@ -30,10 +33,18 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
   String _hospitalId = '';
   String? _myRole;
 
+  bool get _isDirector => _myRole == 'director';
+
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    // Diretor: Membros | Convites | Pedidos de acesso | Acesso compartilhado
+    // Supervisor: Inspetores | Convites | Acesso compartilhado
+    //   (sem "Pedidos de acesso" — quem resolve pedidos é o Diretor/owner
+    //    pela tela dedicada; aqui o Supervisor gerencia o que ele concede)
+    final role = context.read<AuthProvider>().profile?.role;
+    _myRole = role;
+    _tab = TabController(length: role == 'director' ? 4 : 3, vsync: this);
     _load();
   }
 
@@ -326,19 +337,30 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Título da primeira aba: o Supervisor só gerencia Inspetores.
+    final primeiraAba = _isDirector ? 'Membros' : 'Inspetores';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Equipe'),
+        title: Text(_isDirector ? 'Equipe' : 'Inspetores'),
         bottom: TabBar(
           controller: _tab,
-          tabs: const [
-            Tab(text: 'Supervisores'),
-            Tab(text: 'Inspetores'),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          tabs: [
+            Tab(text: primeiraAba),
+            const Tab(text: 'Convites enviados'),
+            if (_isDirector) const Tab(text: 'Pedidos de acesso'),
+            const Tab(text: 'Acesso compartilhado'),
           ],
         ),
       ),
+      // Único ponto de convite do app (regra da reorganização).
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(AppRoutes.convidarUsuario),
+        onPressed: () async {
+          await context.push(AppRoutes.convidarUsuario);
+          _load();
+        },
         icon: const Icon(Icons.person_add_alt_1),
         label: const Text('Convidar usuário'),
       ),
@@ -347,21 +369,75 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
           : TabBarView(
               controller: _tab,
               children: [
-                _UserList(
-                  users: _supervisores,
-                  setores: _setores,
-                  onDesativar: _desativar,
-                  emptyMsg: 'Nenhum Supervisor vinculado.',
-                ),
-                _UserList(
-                  users: _inspetores,
-                  setores: _setores,
-                  onDesativar: _desativar,
-                  onGerenciarSetores: _gerenciarSetores,
-                  emptyMsg: 'Nenhum Inspetor vinculado.',
-                ),
+                _buildMembrosTab(),
+                const ConvitesEnviadosScreen(embedded: true),
+                if (_isDirector) const PedidosAcessoScreen(embedded: true),
+                const AcessoCompartilhadoScreen(embedded: true),
               ],
             ),
+    );
+  }
+
+  /// Aba de membros. O Diretor vê Supervisores e Inspetores em seções;
+  /// o Supervisor vê apenas os Inspetores (não gerencia Supervisores).
+  Widget _buildMembrosTab() {
+    if (!_isDirector) {
+      return _UserList(
+        users: _inspetores,
+        setores: _setores,
+        onDesativar: _desativar,
+        onGerenciarSetores: _gerenciarSetores,
+        emptyMsg: 'Nenhum Inspetor vinculado.',
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+            AppDimensions.screenPadding,
+            AppDimensions.screenPadding,
+            AppDimensions.screenPadding,
+            88),
+        children: [
+          Text('Supervisores', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          if (_supervisores.isEmpty)
+            const _EmptyRow(msg: 'Nenhum Supervisor vinculado.')
+          else
+            ..._supervisores.map((u) => _UserCard(
+                  user: u,
+                  onDesativar: _desativar,
+                )),
+          const SizedBox(height: 20),
+          Text('Inspetores', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          if (_inspetores.isEmpty)
+            const _EmptyRow(msg: 'Nenhum Inspetor vinculado.')
+          else
+            ..._inspetores.map((u) => _UserCard(
+                  user: u,
+                  onDesativar: _desativar,
+                  onGerenciarSetores: _gerenciarSetores,
+                )),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyRow extends StatelessWidget {
+  final String msg;
+  const _EmptyRow({required this.msg});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading:
+            const Icon(Icons.info_outline, color: AppColors.textSecondary),
+        title: Text(msg),
+      ),
     );
   }
 }
@@ -387,46 +463,71 @@ class _UserList extends StatelessWidget {
       return Center(child: Text(emptyMsg));
     }
     return ListView.builder(
-      padding: const EdgeInsets.all(AppDimensions.screenPadding),
+      padding: const EdgeInsets.fromLTRB(
+          AppDimensions.screenPadding,
+          AppDimensions.screenPadding,
+          AppDimensions.screenPadding,
+          88),
       itemCount: users.length,
-      itemBuilder: (ctx, i) {
-        final u = users[i];
-        return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: u.isActive
-                  ? AppColors.primary
-                  : AppColors.textDisabled,
-              child: Text(
-                u.fullName.split(' ').map((w) => w.isNotEmpty ? w[0] : '').take(2).join(),
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-            title: Text(u.fullName),
-            subtitle: Text(
-                '${u.email}  •  ${CpfUtils.mask(u.cpf)}'),
-            trailing: PopupMenuButton<String>(
-              onSelected: (v) {
-                if (v == 'desativar') onDesativar(u);
-                if (v == 'setores' && onGerenciarSetores != null) {
-                  onGerenciarSetores!(u);
-                }
-              },
-              itemBuilder: (_) => [
-                if (onGerenciarSetores != null)
-                  const PopupMenuItem(
-                    value: 'setores',
-                    child: Text('Setores'),
-                  ),
-                PopupMenuItem(
-                  value: 'desativar',
-                  child: Text(u.isActive ? 'Desativar' : 'Reativar'),
-                ),
-              ],
-            ),
+      itemBuilder: (ctx, i) => _UserCard(
+        user: users[i],
+        onDesativar: onDesativar,
+        onGerenciarSetores: onGerenciarSetores,
+      ),
+    );
+  }
+}
+
+/// Card de membro da equipe — usado tanto na lista simples do Supervisor
+/// quanto nas seções (Supervisores / Inspetores) da visão do Diretor.
+class _UserCard extends StatelessWidget {
+  final Profile user;
+  final Future<void> Function(Profile) onDesativar;
+  final Future<void> Function(Profile)? onGerenciarSetores;
+
+  const _UserCard({
+    required this.user,
+    required this.onDesativar,
+    this.onGerenciarSetores,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final u = user;
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor:
+              u.isActive ? AppColors.primary : AppColors.textDisabled,
+          child: Text(
+            u.fullName
+                .split(' ')
+                .map((w) => w.isNotEmpty ? w[0] : '')
+                .take(2)
+                .join(),
+            style: const TextStyle(color: Colors.white, fontSize: 12),
           ),
-        );
-      },
+        ),
+        title: Text(u.fullName),
+        // CPF sempre mascarado (só os 4 últimos dígitos).
+        subtitle: Text('${u.email}  •  ${CpfUtils.mask(u.cpf)}'),
+        trailing: PopupMenuButton<String>(
+          onSelected: (v) {
+            if (v == 'desativar') onDesativar(u);
+            if (v == 'setores' && onGerenciarSetores != null) {
+              onGerenciarSetores!(u);
+            }
+          },
+          itemBuilder: (_) => [
+            if (onGerenciarSetores != null)
+              const PopupMenuItem(value: 'setores', child: Text('Setores')),
+            PopupMenuItem(
+              value: 'desativar',
+              child: Text(u.isActive ? 'Desativar' : 'Reativar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

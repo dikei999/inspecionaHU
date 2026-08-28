@@ -4,15 +4,17 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/charts.dart';
 import '../../../widgets/notification_bell.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../../widgets/stat_card.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../shared/widgets/dashboard_nav_card.dart';
 
-/// Dashboard do Supervisor — mesma visão do Diretor com permissões restritas.
-/// Supervisor NÃO cria templates locais nem vincula Supervisores.
+/// Dashboard do Supervisor — mesma estrutura de 4 destinos do Diretor,
+/// porém com os dados restritos aos setores que ele gerencia (owner ou
+/// sector_access). Supervisor NÃO cria templates locais nem convida
+/// Supervisores — ambas as restrições já são validadas no backend.
 class SupervisorDashboardScreen extends StatefulWidget {
   const SupervisorDashboardScreen({super.key});
 
@@ -29,13 +31,12 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
   int _inspecoesHoje = 0;
   int _ncsAbertas = 0;
   int _setoresPendentes = 0;
+  int _meusSetores = 0;
 
-  // Agregados para os gráficos
+  // Agregados do donut de conformidade
   int _totalCompliant = 0;
   int _totalNonCompliant = 0;
   int _totalNotApplicable = 0;
-  List<double> _inspecoesPorDia = List.filled(7, 0);
-  List<String> _diasLabels = List.filled(7, '');
 
   @override
   void initState() {
@@ -55,11 +56,31 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
     final hospitalId = profile.hospitalId!;
 
     try {
+      // Escopo do Supervisor: setores onde é owner + onde tem sector_access.
+      final sectorIds = await _meusSetorIds(hospitalId, profile.id);
+
+      if (sectorIds.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _conformidade = 0;
+            _inspecoesHoje = 0;
+            _ncsAbertas = 0;
+            _setoresPendentes = 0;
+            _meusSetores = 0;
+            _totalCompliant = 0;
+            _totalNonCompliant = 0;
+            _totalNotApplicable = 0;
+            _loading = false;
+          });
+        }
+        return;
+      }
+
       final reports = await _db
           .from('reports')
-          .select(
-              'compliance_rate, compliant, non_compliant, not_applicable')
-          .eq('hospital_id', hospitalId);
+          .select('compliance_rate, compliant, non_compliant, not_applicable')
+          .eq('hospital_id', hospitalId)
+          .inFilter('sector_id', sectorIds);
 
       double conf = 0;
       int sumC = 0, sumNc = 0, sumNa = 0;
@@ -81,40 +102,15 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           .from('inspections')
           .select('id')
           .eq('hospital_id', hospitalId)
+          .inFilter('sector_id', sectorIds)
           .gte('submitted_at', '${todayStr}T00:00:00')
           .lt('submitted_at', '${todayStr}T23:59:59');
-
-      // Inspeções enviadas nos últimos 7 dias (para o gráfico de barras)
-      final weekAgo = today.subtract(const Duration(days: 6));
-      final weekAgoStr =
-          '${weekAgo.year}-${weekAgo.month.toString().padLeft(2, '0')}-${weekAgo.day.toString().padLeft(2, '0')}';
-      final inspWeek = await _db
-          .from('inspections')
-          .select('submitted_at')
-          .eq('hospital_id', hospitalId)
-          .gte('submitted_at', '${weekAgoStr}T00:00:00');
-
-      final porDia = List<double>.filled(7, 0);
-      final labels = List<String>.filled(7, '');
-      const weekdayNames = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
-      for (int i = 0; i < 7; i++) {
-        final day = today.subtract(Duration(days: 6 - i));
-        labels[i] = weekdayNames[day.weekday - 1];
-      }
-      for (final insp in inspWeek) {
-        final submitted = AppDateUtils.parseDate(insp['submitted_at'] as String?);
-        if (submitted == null) continue;
-        final diff = DateTime(today.year, today.month, today.day)
-            .difference(
-                DateTime(submitted.year, submitted.month, submitted.day))
-            .inDays;
-        if (diff >= 0 && diff < 7) porDia[6 - diff] += 1;
-      }
 
       final openInspections = await _db
           .from('inspections')
           .select('id')
           .eq('hospital_id', hospitalId)
+          .inFilter('sector_id', sectorIds)
           .neq('overall_status', 'validated');
 
       int ncCount = 0;
@@ -132,9 +128,10 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           .from('tasks')
           .select('sector_id')
           .eq('hospital_id', hospitalId)
+          .inFilter('sector_id', sectorIds)
           .inFilter('status', ['pending', 'in_progress']);
 
-      final sectorIds =
+      final pendentes =
           pendingTasks.map((t) => t['sector_id'] as String).toSet().length;
 
       if (mounted) {
@@ -142,12 +139,11 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           _conformidade = conf;
           _inspecoesHoje = inspToday.length;
           _ncsAbertas = ncCount;
-          _setoresPendentes = sectorIds;
+          _setoresPendentes = pendentes;
+          _meusSetores = sectorIds.length;
           _totalCompliant = sumC;
           _totalNonCompliant = sumNc;
           _totalNotApplicable = sumNa;
-          _inspecoesPorDia = porDia;
-          _diasLabels = labels;
           _loading = false;
         });
       }
@@ -157,17 +153,37 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
     }
   }
 
+  /// Setores do Supervisor: owner + sector_access (view ou edit).
+  Future<List<String>> _meusSetorIds(
+      String hospitalId, String supervisorId) async {
+    final ids = <String>{};
+
+    final owned = await _db
+        .from('sectors')
+        .select('id')
+        .eq('hospital_id', hospitalId)
+        .eq('owner_supervisor_id', supervisorId);
+    for (final r in owned) {
+      ids.add(r['id'] as String);
+    }
+
+    final shared = await _db
+        .from('sector_access')
+        .select('sector_id')
+        .eq('supervisor_id', supervisorId);
+    for (final r in shared) {
+      ids.add(r['sector_id'] as String);
+    }
+
+    return ids.toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.read<AuthProvider>();
     final profile = context.watch<AuthProvider>().profile;
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(AppRoutes.convidarUsuario),
-        icon: const Icon(Icons.person_add_alt_1),
-        label: const Text('Convidar usuário'),
-      ),
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: Column(
@@ -203,10 +219,22 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // ── Métricas ─────────────────────────────────────────────
             if (_loading)
               const SkeletonDashboard()
             else ...[
+              // ── Conformidade geral: gráfico compacto no topo ──────────
+              ChartCard(
+                title: 'Conformidade geral',
+                subtitle: 'Itens respondidos nos seus setores',
+                child: ComplianceDonut(
+                  compliant: _totalCompliant,
+                  nonCompliant: _totalNonCompliant,
+                  notApplicable: _totalNotApplicable,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // ── Métricas ──────────────────────────────────────────────
               Row(
                 children: [
                   Expanded(
@@ -258,200 +286,52 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-
-              // ── Gráficos ────────────────────────────────────────────
-              ChartCard(
-                title: 'Conformidade geral',
-                subtitle: 'Itens respondidos em todas as inspeções',
-                child: ComplianceDonut(
-                  compliant: _totalCompliant,
-                  nonCompliant: _totalNonCompliant,
-                  notApplicable: _totalNotApplicable,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ChartCard(
-                title: 'Inspeções na semana',
-                subtitle: 'Enviadas nos últimos 7 dias',
-                child: SingleSeriesBarChart(
-                  values: _inspecoesPorDia,
-                  labels: _diasLabels,
-                  tooltipSuffix: ' inspeção(ões)',
-                ),
-              ),
             ],
 
             const SizedBox(height: 28),
+
+            // ── Navegação: 4 destinos ─────────────────────────────────
             Text('Gestão', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
 
-            _buildNavGrid(context),
+            DashboardNavCard(
+              icon: Icons.domain_outlined,
+              color: AppColors.primary,
+              title: 'Setores',
+              subtitle: _meusSetores > 0
+                  ? 'Seus setores: checklists, tarefas, equipe e histórico'
+                  : 'Você ainda não é responsável por nenhum setor',
+              onTap: () async {
+                await context.push(AppRoutes.gestaoSetores);
+                _load();
+              },
+            ),
+            DashboardNavCard(
+              icon: Icons.people_outline,
+              color: AppColors.compliant,
+              title: 'Inspetores',
+              subtitle: 'Inspetores, convites e acesso compartilhado',
+              onTap: () async {
+                await context.push(AppRoutes.gestaoEquipe);
+                _load();
+              },
+            ),
+            DashboardNavCard(
+              icon: Icons.insights_outlined,
+              color: AppColors.pending,
+              title: 'Relatórios & Análises',
+              subtitle: 'Conformidade e inspeções dos seus setores',
+              badge: _ncsAbertas,
+              onTap: () => context.push(AppRoutes.supervisorRelatorios),
+            ),
+            DashboardNavCard(
+              icon: Icons.settings_outlined,
+              color: AppColors.primary,
+              title: 'Templates & Configurações',
+              subtitle: 'Templates globais (leitura), notificações e hospital',
+              onTap: () => context.push(AppRoutes.supervisorConfiguracoes),
+            ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavGrid(BuildContext context) {
-    final items = [
-      _NavItem(
-        icon: Icons.domain_outlined,
-        label: 'Setores',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.gestaoSetores),
-      ),
-      _NavItem(
-        icon: Icons.people_outline,
-        label: 'Inspetores',
-        color: AppColors.compliant,
-        onTap: () => context.push(AppRoutes.gestaoEquipe),
-      ),
-      _NavItem(
-        icon: Icons.checklist_outlined,
-        label: 'Novo Checklist',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.novoChecklist),
-      ),
-      _NavItem(
-        icon: Icons.assignment_add,
-        label: 'Atribuir Tarefa',
-        color: AppColors.pending,
-        onTap: () => context.push(AppRoutes.atribuirTarefa),
-      ),
-      _NavItem(
-        icon: Icons.view_kanban_outlined,
-        label: 'Quadro de Tarefas',
-        color: AppColors.pending,
-        badge: _setoresPendentes,
-        onTap: () => context.push(AppRoutes.quadroTarefasGestao),
-      ),
-      _NavItem(
-        icon: Icons.calendar_month_outlined,
-        label: 'Calendário',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.calendarioInstitucional),
-      ),
-      _NavItem(
-        icon: Icons.share_outlined,
-        label: 'Acesso Compartilhado',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.acessoCompartilhado),
-      ),
-      _NavItem(
-        icon: Icons.approval_outlined,
-        label: 'Pedidos de Acesso',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.pedidosAcesso),
-      ),
-      _NavItem(
-        icon: Icons.outgoing_mail,
-        label: 'Convites Enviados',
-        color: AppColors.primary,
-        onTap: () => context.push(AppRoutes.convitesEnviados),
-      ),
-    ];
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 1.0,
-      ),
-      itemCount: items.length,
-      itemBuilder: (context, i) => _NavTile(item: items[i]),
-    );
-  }
-}
-
-class _NavItem {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final int badge;
-  final VoidCallback onTap;
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.color,
-    this.badge = 0,
-    required this.onTap,
-  });
-}
-
-class _NavTile extends StatelessWidget {
-  final _NavItem item;
-  const _NavTile({required this.item});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: item.onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border, width: 0.5),
-            boxShadow: AppShadows.card,
-          ),
-          child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: item.color.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(item.icon, color: item.color, size: 22),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      item.label,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: AppColors.textPrimary,
-                            height: 1.3,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              if (item.badge > 0)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: AppColors.pending,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      item.badge.toString(),
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-            ],
-          ),
         ),
       ),
     );

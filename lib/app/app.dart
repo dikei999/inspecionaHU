@@ -11,6 +11,9 @@ import '../features/shared/screens/perfil_screen.dart';
 import '../features/shared/screens/notificacoes_screen.dart';
 import '../features/shared/screens/convidar_usuario_screen.dart';
 import '../features/shared/screens/convites_enviados_screen.dart';
+import '../features/shared/screens/detalhes_setor_screen.dart';
+import '../features/shared/screens/relatorios_analises_screen.dart';
+import '../features/shared/screens/configuracoes_screen.dart';
 // Super Admin
 import '../features/super_admin/screens/super_admin_dashboard_screen.dart';
 import '../features/super_admin/screens/hospitais_screen.dart';
@@ -125,6 +128,27 @@ class _AppState extends State<App> {
     if (role == 'director' && location.startsWith('/super-admin')) {
       return AppRoutes.directorDashboard;
     }
+
+    // /setor/:id é o hub de gestão — só Diretor e Supervisor entram.
+    // A permissão fina (owner / sector_access) é resolvida na própria tela.
+    if (location.startsWith('/setor/') &&
+        role != 'director' &&
+        role != 'supervisor') {
+      return AppRoutes.dashboardForRole(role);
+    }
+
+    // Inspetor só acessa as próprias rotas.
+    if (role == 'inspector' &&
+        (location.startsWith('/director') ||
+            location.startsWith('/supervisor') ||
+            location.startsWith('/super-admin'))) {
+      return AppRoutes.inspectorDashboard;
+    }
+
+    // Diretor não usa os aliases /supervisor/*.
+    if (role == 'director' && location.startsWith('/supervisor')) {
+      return AppRoutes.directorDashboard;
+    }
     // Supervisor pode acessar rotas /director/* compartilhadas (setores, checklists,
     // tarefas, equipe, relatórios, calendário, acesso) — exceto apenas
     // templates-locais (exclusivo do Director).
@@ -174,6 +198,14 @@ class _AppState extends State<App> {
       GoRoute(
         path: AppRoutes.convitesEnviados,
         builder: (context, state) => const ConvitesEnviadosScreen(),
+      ),
+      // Hub central do setor — Diretor e Supervisor (permissões resolvidas
+      // dentro da tela; Supervisor sem acesso vê mensagem e volta).
+      GoRoute(
+        path: '/setor/:sectorId',
+        builder: (context, state) => DetalhesSetorScreen(
+          sectorId: state.pathParameters['sectorId']!,
+        ),
       ),
 
       // ── Super Admin ───────────────────────────────────────────────────────
@@ -241,7 +273,9 @@ class _AppState extends State<App> {
       ),
       GoRoute(
         path: AppRoutes.novoChecklist,
-        builder: (context, state) => const FormChecklistScreen(),
+        builder: (context, state) => FormChecklistScreen(
+          initialSectorId: state.uri.queryParameters['sectorId'],
+        ),
       ),
       GoRoute(
         path: '/director/checklists/:id/editar',
@@ -265,7 +299,9 @@ class _AppState extends State<App> {
       ),
       GoRoute(
         path: AppRoutes.atribuirTarefa,
-        builder: (context, state) => const AtribuirTarefaScreen(),
+        builder: (context, state) => AtribuirTarefaScreen(
+          initialSectorId: state.uri.queryParameters['sectorId'],
+        ),
       ),
       GoRoute(
         path: AppRoutes.quadroTarefasGestao,
@@ -288,11 +324,29 @@ class _AppState extends State<App> {
         path: AppRoutes.pedidosAcesso,
         builder: (context, state) => const PedidosAcessoScreen(),
       ),
+      GoRoute(
+        path: AppRoutes.relatoriosAnalises,
+        builder: (context, state) => const RelatoriosAnalisesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.configuracoes,
+        builder: (context, state) => const ConfiguracoesScreen(),
+      ),
 
       // ── Supervisor (Fase 5) ───────────────────────────────────────────────
       GoRoute(
         path: AppRoutes.supervisorDashboard,
         builder: (context, state) => const SupervisorDashboardScreen(),
+      ),
+      // Aliases do Supervisor para as telas compartilhadas — o conteúdo é
+      // filtrado por role dentro de cada tela.
+      GoRoute(
+        path: AppRoutes.supervisorRelatorios,
+        builder: (context, state) => const RelatoriosAnalisesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.supervisorConfiguracoes,
+        builder: (context, state) => const ConfiguracoesScreen(),
       ),
 
       // ── Inspetor ──────────────────────────────────────────────────────────

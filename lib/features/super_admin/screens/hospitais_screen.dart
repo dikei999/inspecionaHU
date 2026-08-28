@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show PostgrestException, Supabase;
 import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
@@ -124,6 +125,97 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
     }
   }
 
+  /// Apagar é permitido apenas em hospitais SEM dependências — nenhum
+  /// setor e nenhum usuário vinculado. Com dependências, explica o motivo
+  /// e sugere desativar (soft delete), que preserva o histórico.
+  Future<void> _apagar(Hospital hospital) async {
+    final auth = context.read<AuthProvider>();
+
+    int setores;
+    int usuarios;
+    try {
+      final setoresData =
+          await _db.from('sectors').select('id').eq('hospital_id', hospital.id);
+      final usuariosData = await _db
+          .from('profiles')
+          .select('id')
+          .eq('hospital_id', hospital.id);
+      setores = setoresData.length;
+      usuarios = usuariosData.length;
+    } catch (_) {
+      _showSnack('Erro ao verificar dependências do hospital.', error: true);
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (setores > 0 || usuarios > 0) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Não é possível apagar'),
+          content: Text(
+            '"${hospital.name}" possui '
+            '${setores > 0 ? '$setores setor(es)' : ''}'
+            '${setores > 0 && usuarios > 0 ? ' e ' : ''}'
+            '${usuarios > 0 ? '$usuarios usuário(s)' : ''} vinculado(s). '
+            'Apagar destruiria dados operacionais. Use "Desativar" — o '
+            'hospital fica inacessível e todo o histórico é preservado.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Entendi'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Apagar hospital?'),
+        content: Text(
+          '"${hospital.name}" não tem setores nem usuários vinculados e '
+          'será removido definitivamente. Esta ação NÃO pode ser desfeita.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.nonCompliant),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Apagar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      await _db.from('hospitals').delete().eq('id', hospital.id);
+      await AuditService.log(
+        userId: auth.profile!.id,
+        action: 'apagar_hospital',
+        entityType: 'hospital',
+        entityId: hospital.id,
+        details: {'name': hospital.name, 'sigla': hospital.sigla},
+      );
+      _showSnack('Hospital apagado.');
+      _load();
+    } on PostgrestException catch (e) {
+      _showSnack('Erro ao apagar: ${e.message}', error: true);
+    } catch (_) {
+      _showSnack('Erro ao apagar hospital.', error: true);
+    }
+  }
+
   void _showSnack(String msg, {bool error = false}) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
@@ -220,6 +312,7 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
                                 PopupMenuButton<String>(
                                   onSelected: (v) {
                                     if (v == 'toggle') _toggleStatus(h);
+                                    if (v == 'apagar') _apagar(h);
                                   },
                                   itemBuilder: (_) => [
                                     PopupMenuItem(
@@ -227,6 +320,14 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
                                       child: Text(h.isActive
                                           ? 'Desativar'
                                           : 'Reativar'),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'apagar',
+                                      child: Text(
+                                        'Apagar',
+                                        style: TextStyle(
+                                            color: AppColors.nonCompliant),
+                                      ),
                                     ),
                                   ],
                                 ),

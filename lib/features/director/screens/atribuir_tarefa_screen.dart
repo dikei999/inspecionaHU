@@ -12,7 +12,11 @@ import '../../../core/services/audit_service.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class AtribuirTarefaScreen extends StatefulWidget {
-  const AtribuirTarefaScreen({super.key});
+  /// Setor pré-selecionado — usado quando a tela é aberta a partir da aba
+  /// "Tarefas" de um setor.
+  final String? initialSectorId;
+
+  const AtribuirTarefaScreen({super.key, this.initialSectorId});
 
   @override
   State<AtribuirTarefaScreen> createState() => _AtribuirTarefaScreenState();
@@ -61,6 +65,15 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
           _setores = setoresData.map(Sector.fromJson).toList();
           _loadingData = false;
         });
+
+        // Pré-seleção vinda da aba "Tarefas" do setor: dispara o mesmo
+        // fluxo do dropdown para carregar checklists e inspetores.
+        if (widget.initialSectorId != null) {
+          final inicial = _setores
+              .where((s) => s.id == widget.initialSectorId)
+              .firstOrNull;
+          if (inicial != null) await _onSetorChanged(inicial);
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _loadingData = false);

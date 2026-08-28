@@ -9,6 +9,8 @@ class AppRoutes {
 
   // ── Compartilhado ────────────────────────────────────────────────────────
   static const perfil = '/perfil';
+  /// Detalhes do setor — hub central (Diretor e Supervisor).
+  static String detalhesSetor(String sectorId) => '/setor/$sectorId';
   static const notificacoes = '/notificacoes';
   static const convidarUsuario = '/convidar-usuario';
   static const convitesEnviados = '/convites-enviados';
@@ -32,20 +34,30 @@ class AppRoutes {
   static String editarSetor(String id) => '/director/setores/$id/editar';
   static const gestaoEquipe = '/director/equipe';
   static const novoChecklist = '/director/checklists/novo';
+  /// Novo checklist com setor pré-selecionado (aba Checklists do setor).
+  static String novoChecklistNoSetor(String sectorId) =>
+      '$novoChecklist?sectorId=$sectorId';
   static String editarChecklist(String id) => '/director/checklists/$id/editar';
   static const templatesLocais = '/director/templates-locais';
   static const novoTemplateLocal = '/director/templates-locais/novo';
   static String editarTemplateLocal(String id) =>
       '/director/templates-locais/$id/editar';
   static const atribuirTarefa = '/director/tarefas/nova';
+  /// Atribuir tarefa com setor pré-selecionado (aba Tarefas do setor).
+  static String atribuirTarefaNoSetor(String sectorId) =>
+      '$atribuirTarefa?sectorId=$sectorId';
   static const quadroTarefasGestao = '/director/tarefas';
   static const calendarioInstitucional = '/director/calendario';
   static String relatorioIndividual(String id) => '/director/relatorios/$id';
   static const acessoCompartilhado = '/director/acesso-compartilhado';
   static const pedidosAcesso = '/director/pedidos-acesso';
+  static const relatoriosAnalises = '/director/analises';
+  static const configuracoes = '/director/configuracoes';
 
   // ── Supervisor ───────────────────────────────────────────────────────────
   static const supervisorDashboard = '/supervisor';
+  static const supervisorRelatorios = '/supervisor/analises';
+  static const supervisorConfiguracoes = '/supervisor/configuracoes';
 
   // ── Inspetor ─────────────────────────────────────────────────────────────
   static const inspectorDashboard = '/inspector';

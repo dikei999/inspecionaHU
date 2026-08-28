@@ -39,10 +39,14 @@ class AppColors {
   static const Color textDisabled = Color(0xFF9CA3AF);
 
   // Status de tarefas
+  // Enviado e Validado usam verdes distintos para diferenciar no calendario.
+  static const Color sentLight = Color(0xFF22C55E); // enviado — verde claro
+  static const Color validatedDark = Color(0xFF15803D); // validado — verde escuro
+
   static const Color statusPending = pending;
   static const Color statusInProgress = primary;
-  static const Color statusSubmitted = compliant;
-  static const Color statusValidated = Color(0xFF059669);
+  static const Color statusSubmitted = sentLight;
+  static const Color statusValidated = validatedDark;
   static const Color statusOverdue = nonCompliant;
 
   // NC Crítica

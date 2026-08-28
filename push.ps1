@@ -1,3 +1,3 @@
 git add -A
-git commit -m "fix: supervisor cria setor como owner + gestão de vínculo inspetor"
+git commit -m "refactor: dashboards reorganizados com Setor como unidade central + código de tarefa + ajustes UX"
 git push

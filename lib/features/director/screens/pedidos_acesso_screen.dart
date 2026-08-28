@@ -11,7 +11,11 @@ import '../../../core/services/audit_service.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class PedidosAcessoScreen extends StatefulWidget {
-  const PedidosAcessoScreen({super.key});
+  /// Quando true a tela é renderizada como aba dentro de outra Scaffold
+  /// (Equipe) — sem AppBar própria. A lógica de negócio é a mesma.
+  final bool embedded;
+
+  const PedidosAcessoScreen({super.key, this.embedded = false});
 
   @override
   State<PedidosAcessoScreen> createState() => _PedidosAcessoScreenState();
@@ -184,7 +188,9 @@ class _PedidosAcessoScreenState extends State<PedidosAcessoScreen> {
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Pedidos de Acesso')),
+      backgroundColor: widget.embedded ? Colors.transparent : null,
+      appBar:
+          widget.embedded ? null : AppBar(title: const Text('Pedidos de Acesso')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(

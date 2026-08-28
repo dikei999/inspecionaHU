@@ -9,7 +9,11 @@ import '../../../core/services/invitation_service.dart';
 /// Lista os convites enviados pelo usuário logado, com filtro por status.
 /// Acessível por Super Admin, Diretor e Supervisor.
 class ConvitesEnviadosScreen extends StatefulWidget {
-  const ConvitesEnviadosScreen({super.key});
+  /// Quando true a tela é renderizada como aba dentro de outra Scaffold
+  /// (Equipe) — sem AppBar própria. A lógica de negócio é a mesma.
+  final bool embedded;
+
+  const ConvitesEnviadosScreen({super.key, this.embedded = false});
 
   @override
   State<ConvitesEnviadosScreen> createState() => _ConvitesEnviadosScreenState();
@@ -100,7 +104,9 @@ class _ConvitesEnviadosScreenState extends State<ConvitesEnviadosScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Convites enviados')),
+      backgroundColor: widget.embedded ? Colors.transparent : null,
+      appBar:
+          widget.embedded ? null : AppBar(title: const Text('Convites enviados')),
       body: Column(
         children: [
           // ── Filtros por status ──────────────────────────────────────────

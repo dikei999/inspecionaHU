@@ -240,6 +240,19 @@ class _QuadroTarefasGestaoScreenState
                                       ),
                                     ],
                                   ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    task.displayCode,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: AppColors.textSecondary,
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures()
+                                          ],
+                                        ),
+                                  ),
                                   const SizedBox(height: 4),
                                   Text(
                                     '${tv.sector?.name ?? '—'}  •  ${tv.inspector?.fullName ?? '—'}',

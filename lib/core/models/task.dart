@@ -1,5 +1,6 @@
 class Task {
   final String id;
+  final String? taskCode; // OS-YYYY-NNNNN — gerado por trigger no banco
   final String checklistId;
   final String sectorId;
   final String hospitalId;
@@ -11,6 +12,7 @@ class Task {
 
   const Task({
     required this.id,
+    this.taskCode,
     required this.checklistId,
     required this.sectorId,
     required this.hospitalId,
@@ -23,6 +25,7 @@ class Task {
 
   factory Task.fromJson(Map<String, dynamic> json) => Task(
         id: json['id'] as String,
+        taskCode: json['task_code'] as String?,
         checklistId: json['checklist_id'] as String,
         sectorId: json['sector_id'] as String,
         hospitalId: json['hospital_id'] as String,
@@ -35,6 +38,7 @@ class Task {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'task_code': taskCode,
         'checklist_id': checklistId,
         'sector_id': sectorId,
         'hospital_id': hospitalId,
@@ -44,6 +48,14 @@ class Task {
         'status': status,
         'created_at': createdAt.toIso8601String(),
       };
+
+  /// Rótulo curto da tarefa — usa o código de OS quando disponível;
+  /// cai para os 8 primeiros caracteres do UUID em bases sem a migration
+  /// migration_task_code.sql aplicada.
+  String get displayCode =>
+      (taskCode != null && taskCode!.isNotEmpty)
+          ? taskCode!
+          : '#${id.substring(0, 8)}';
 
   /// overdue é CALCULADO — não armazenado como status (regra 6.3).
   bool get isOverdue =>

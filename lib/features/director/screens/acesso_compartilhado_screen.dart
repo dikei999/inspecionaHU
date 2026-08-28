@@ -11,7 +11,11 @@ import '../../../core/utils/cpf_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class AcessoCompartilhadoScreen extends StatefulWidget {
-  const AcessoCompartilhadoScreen({super.key});
+  /// Quando true a tela é renderizada como aba dentro de outra Scaffold
+  /// (Equipe) — sem AppBar própria. A lógica de negócio é a mesma.
+  final bool embedded;
+
+  const AcessoCompartilhadoScreen({super.key, this.embedded = false});
 
   @override
   State<AcessoCompartilhadoScreen> createState() =>
@@ -261,8 +265,12 @@ class _AcessoCompartilhadoScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Acesso Compartilhado')),
+      backgroundColor: widget.embedded ? Colors.transparent : null,
+      appBar: widget.embedded
+          ? null
+          : AppBar(title: const Text('Acesso Compartilhado')),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: widget.embedded ? 'fab_acesso_embedded' : null,
         onPressed: _conceder,
         icon: const Icon(Icons.share_outlined),
         label: const Text('Conceder acesso'),

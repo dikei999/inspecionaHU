@@ -79,13 +79,15 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
       if (t.dueDate.isBefore(now) &&
           t.status != 'submitted' &&
           t.status != 'validated') {
-        colors.add(AppColors.nonCompliant);
+        colors.add(AppColors.statusOverdue);
       } else if (t.status == 'pending') {
-        colors.add(AppColors.pending);
+        colors.add(AppColors.statusPending);
       } else if (t.status == 'in_progress') {
-        colors.add(AppColors.primary);
-      } else if (t.status == 'submitted' || t.status == 'validated') {
-        colors.add(AppColors.compliant);
+        colors.add(AppColors.statusInProgress);
+      } else if (t.status == 'submitted') {
+        colors.add(AppColors.statusSubmitted);
+      } else if (t.status == 'validated') {
+        colors.add(AppColors.statusValidated);
       }
     }
     return colors.take(3).toList();
@@ -375,10 +377,11 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
       spacing: 16,
       runSpacing: 8,
       children: const [
-        _LegendItem(color: AppColors.nonCompliant, label: 'Atrasada'),
-        _LegendItem(color: AppColors.pending, label: 'Pendente'),
-        _LegendItem(color: AppColors.primary, label: 'Em andamento'),
-        _LegendItem(color: AppColors.compliant, label: 'Enviada'),
+        _LegendItem(color: AppColors.statusPending, label: 'Pendente'),
+        _LegendItem(color: AppColors.statusInProgress, label: 'Em andamento'),
+        _LegendItem(color: AppColors.statusSubmitted, label: 'Enviada'),
+        _LegendItem(color: AppColors.statusValidated, label: 'Validada'),
+        _LegendItem(color: AppColors.statusOverdue, label: 'Atrasada'),
       ],
     );
   }
@@ -419,16 +422,17 @@ class _DayTaskCard extends StatelessWidget {
     if (task.dueDate.isBefore(now) &&
         task.status != 'submitted' &&
         task.status != 'validated') {
-      return AppColors.nonCompliant;
+      return AppColors.statusOverdue;
     }
     switch (task.status) {
       case 'in_progress':
-        return AppColors.primary;
+        return AppColors.statusInProgress;
       case 'submitted':
+        return AppColors.statusSubmitted;
       case 'validated':
-        return AppColors.compliant;
+        return AppColors.statusValidated;
       default:
-        return AppColors.pending;
+        return AppColors.statusPending;
     }
   }
 
@@ -481,7 +485,7 @@ class _DayTaskCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Tarefa #${task.id.substring(0, 8)}',
+                  'Tarefa ${task.displayCode}',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 3),
