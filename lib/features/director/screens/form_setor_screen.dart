@@ -89,8 +89,14 @@ class _FormSetorScreenState extends State<FormSetorScreen> {
           details: {'name': _nomeCtrl.text.trim()},
         );
       } else {
+        // Supervisor que cria um setor vira automaticamente o owner
+        // (policy sectors_supervisor_insert exige owner_supervisor_id =
+        // auth.uid()). Diretor cria sem dono definido — pode vincular um
+        // Supervisor depois.
         final result = await _db.from('sectors').insert({
           'hospital_id': profile.hospitalId,
+          'owner_supervisor_id':
+              profile.role == 'supervisor' ? profile.id : null,
           'name': _nomeCtrl.text.trim(),
           'description': _descCtrl.text.trim().isEmpty
               ? null

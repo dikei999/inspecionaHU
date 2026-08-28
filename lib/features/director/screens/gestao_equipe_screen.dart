@@ -28,6 +28,7 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
   List<Profile> _inspetores = [];
   List<Sector> _setores = [];
   String _hospitalId = '';
+  String? _myRole;
 
   @override
   void initState() {
@@ -52,6 +53,7 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
       return;
     }
     _hospitalId = profile!.hospitalId!;
+    _myRole = profile.role;
 
     try {
       final sups = await _db
@@ -68,24 +70,70 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
           .eq('role', 'inspector')
           .order('full_name');
 
-      final setoresData = await _db
-          .from('sectors')
-          .select()
-          .eq('hospital_id', _hospitalId)
-          .eq('status', 'active')
-          .order('name');
+      final setores = await _loadSetoresGerenciaveis(profile);
 
       if (mounted) {
         setState(() {
           _supervisores = sups.map(Profile.fromJson).toList();
           _inspetores = insp.map(Profile.fromJson).toList();
-          _setores = setoresData.map(Sector.fromJson).toList();
+          _setores = setores;
           _loading = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Setores que o usuário logado pode gerenciar vínculos de Inspetor.
+  /// Diretor: todos os setores ativos do hospital.
+  /// Supervisor: apenas setores onde é owner ou tem sector_access.can_edit
+  /// (mesma regra da policy inspector_sectors_supervisor_insert/update —
+  /// filtrar aqui evita que o Supervisor marque um setor no dialog e a
+  /// operação inteira falhe por RLS).
+  Future<List<Sector>> _loadSetoresGerenciaveis(Profile profile) async {
+    if (profile.role == 'director') {
+      final data = await _db
+          .from('sectors')
+          .select()
+          .eq('hospital_id', _hospitalId)
+          .eq('status', 'active')
+          .order('name');
+      return (data as List).map((e) => Sector.fromJson(e)).toList();
+    }
+
+    final owned = await _db
+        .from('sectors')
+        .select()
+        .eq('hospital_id', _hospitalId)
+        .eq('status', 'active')
+        .eq('owner_supervisor_id', profile.id);
+
+    final accessRows = await _db
+        .from('sector_access')
+        .select('sector_id')
+        .eq('supervisor_id', profile.id)
+        .eq('can_edit', true);
+    final accessIds =
+        (accessRows as List).map((r) => r['sector_id'] as String).toList();
+
+    final byId = <String, Sector>{
+      for (final e in (owned as List)) (e['id'] as String): Sector.fromJson(e),
+    };
+
+    if (accessIds.isNotEmpty) {
+      final shared = await _db
+          .from('sectors')
+          .select()
+          .eq('hospital_id', _hospitalId)
+          .eq('status', 'active')
+          .inFilter('id', accessIds);
+      for (final e in (shared as List)) {
+        byId[e['id'] as String] = Sector.fromJson(e);
+      }
+    }
+
+    return byId.values.toList()..sort((a, b) => a.name.compareTo(b.name));
   }
 
   void _showSnack(String msg, {bool error = false}) {
@@ -125,7 +173,9 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
           content: SizedBox(
             width: double.maxFinite,
             child: _setores.isEmpty
-                ? const Text('Nenhum setor cadastrado neste hospital.')
+                ? Text(_myRole == 'supervisor'
+                    ? 'Você não é dono nem tem acesso de edição a nenhum setor.'
+                    : 'Nenhum setor cadastrado neste hospital.')
                 : ListView(
                     shrinkWrap: true,
                     children: _setores
