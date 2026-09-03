@@ -18,6 +18,7 @@ import '../../../core/models/inspection.dart';
 import '../../../core/models/task.dart';
 import '../../../core/services/audit_service.dart';
 import '../../../core/utils/app_date_utils.dart';
+import '../../../widgets/nr32_clause_chip.dart';
 import '../../auth/providers/auth_provider.dart';
 
 /// Estado de persistência de uma resposta individual.
@@ -1122,23 +1123,12 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
                             ),
                             const SizedBox(width: 6),
                           ],
-                          // Chip NR-32
+                          // Chip NR-32 — tocável quando a cláusula existe
+                          // no mapa (abre bottom sheet com o texto da norma)
                           if (item.nr32Reference != null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary50,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                item.nr32Reference!,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
+                            Nr32ClauseChip(
+                              reference: item.nr32Reference!,
+                              isCritical: item.isCritical,
                             ),
                         ],
                       ),

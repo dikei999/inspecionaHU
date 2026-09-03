@@ -12,6 +12,7 @@ import '../../../core/models/inspection_response.dart';
 import '../../../core/services/audit_service.dart';
 import '../../../core/services/report_export_service.dart';
 import '../../../widgets/charts.dart';
+import '../../../widgets/nr32_clause_chip.dart';
 import '../../../widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 
@@ -512,12 +513,14 @@ class _RelatorioIndividualScreenState
                     ),
                     if (item?.nr32Reference != null) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        item!.nr32Reference!,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: AppColors.primary),
+                      // Tocável quando a cláusula existe no mapa (abre
+                      // bottom sheet com o texto integral da norma).
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Nr32ClauseChip(
+                          reference: item!.nr32Reference!,
+                          isCritical: item.isCritical,
+                        ),
                       ),
                     ],
                     if (resp.status != 'NC' &&
@@ -744,13 +747,15 @@ class _NcCard extends StatelessWidget {
             ],
           ),
           if (item?.nr32Reference != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              item!.nr32Reference!,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: AppColors.primary),
+            const SizedBox(height: 4),
+            // Tocável quando a cláusula existe no mapa (abre bottom
+            // sheet com o texto integral da norma).
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Nr32ClauseChip(
+                reference: item!.nr32Reference!,
+                isCritical: item!.isCritical,
+              ),
             ),
           ],
           if (response.observation != null) ...[

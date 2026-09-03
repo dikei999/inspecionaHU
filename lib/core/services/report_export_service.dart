@@ -10,6 +10,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 
+import '../constants/nr32_clauses.dart';
 import '../models/checklist_item.dart';
 import '../models/inspection.dart';
 import '../models/inspection_response.dart';
@@ -209,6 +210,7 @@ class ReportExportService {
             ...withPhoto.map((r) => _pdfPhotoEvidenceBlock(
                 data, r, photoBytes[r.id], displayNumbers[r.id])),
           ],
+          ..._pdfNormativeBase(data),
         ],
       ),
     );
@@ -501,6 +503,85 @@ class ReportExportService {
         ],
       ),
     );
+  }
+
+  /// Seção "Base normativa": cada referência NR-32 citada neste relatório,
+  /// em ordem crescente, com o texto integral da cláusula (nr32_clauses.dart).
+  /// É o que torna o relatório um documento de conformidade defensável.
+  static List<pw.Widget> _pdfNormativeBase(ReportExportData data) {
+    final refs = data.responses
+        .map((r) => data.items[r.checklistItemId]?.nr32Reference)
+        .whereType<String>()
+        .toSet()
+        .toList()
+      ..sort(_compareNr32Refs);
+    if (refs.isEmpty) return [];
+
+    return [
+      pw.SizedBox(height: 20),
+      pw.Text('Base normativa',
+          style: pw.TextStyle(
+              fontSize: 13,
+              fontWeight: pw.FontWeight.bold,
+              color: _pdfPrimary)),
+      pw.SizedBox(height: 4),
+      pw.Text(
+          'Cláusulas da NR-32 — Segurança e Saúde no Trabalho em Serviços '
+          'de Saúde citadas pelos itens deste relatório.',
+          style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
+      pw.SizedBox(height: 8),
+      ...refs.map((ref) => pw.Container(
+            width: double.infinity,
+            margin: const pw.EdgeInsets.only(bottom: 6),
+            padding: const pw.EdgeInsets.all(8),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: _pdfBorder, width: 0.5),
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('NR-32 · $ref',
+                    style: pw.TextStyle(
+                        fontSize: 9,
+                        fontWeight: pw.FontWeight.bold,
+                        color: _pdfPrimary)),
+                pw.SizedBox(height: 3),
+                pw.Text(
+                    nr32Clauses[ref] ??
+                        'Texto da cláusula não disponível nesta versão do aplicativo.',
+                    style: const pw.TextStyle(fontSize: 8, lineSpacing: 2)),
+              ],
+            ),
+          )),
+    ];
+  }
+
+  /// Ordena referências NR-32: numéricas primeiro (comparação parte a
+  /// parte: 32.5.2 < 32.5.10), depois as do Anexo III em ordem textual.
+  static int _compareNr32Refs(String a, String b) {
+    final na = _refNumericParts(a);
+    final nb = _refNumericParts(b);
+    if (na != null && nb != null) {
+      for (var i = 0; i < na.length && i < nb.length; i++) {
+        final c = na[i].compareTo(nb[i]);
+        if (c != 0) return c;
+      }
+      return na.length.compareTo(nb.length);
+    }
+    if (na != null) return -1;
+    if (nb != null) return 1;
+    return a.compareTo(b);
+  }
+
+  static List<int>? _refNumericParts(String ref) {
+    final nums = <int>[];
+    for (final part in ref.split('.')) {
+      final n = int.tryParse(part);
+      if (n == null) return null;
+      nums.add(n);
+    }
+    return nums;
   }
 
   /// Bloco de evidência fotográfica de um item (qualquer status: C, NC, NA).
