@@ -9,8 +9,8 @@ Este documento define o catálogo de itens de inspeção do aplicativo (Parte A)
 
 - **Todo item corresponde a uma cláusula literal da NR-32**, citada pelo número exato. Nenhum item foi criado a partir de NR-23, NR-17, NR-06, NR-24, RDC ou NBR, mesmo quando a NR-32 as cita por referência cruzada (os casos cogitados e rejeitados estão na seção "Itens descartados").
 - **Descrição**: frase afirmativa, verificável em campo por observação direta ou conferência de documento presente no setor. O inspetor marca **Conforme / Não conforme / Não aplicável**.
-- **Criticidade `critical`**: quando a cláusula usa "é vedado", "obrigatório" ou "imediatamente", ou quando trata de exposição biológica direta, material perfurocortante, radiação ionizante ou quimioterápico antineoplásico. Todo o restante é `normal`. Pela natureza da matéria, **todos os itens das seções 32.4 (Radiações Ionizantes) e Anexo III (Perfurocortantes) são `critical`**.
-- **Exige foto**: **sim** para todo item `critical` e para item de estrutura física que a foto comprova; **não** para item puramente documental de criticidade `normal`. Em item `critical` documental, a foto esperada é do próprio documento.
+- **Criticidade `critical`**: quando a cláusula usa vedação ("é vedado", "não é permitido"), obrigação imediata, ou quando a não conformidade implica exposição direta do trabalhador (agente biológico, perfurocortante, radiação ionizante, quimioterápico antineoplásico). Itens de registro, prazo de guarda e documentação são `normal`, mesmo nas seções 32.4 e Anexo III — para preservar o valor de destaque da não conformidade crítica.
+- **Exige foto**: **sim** para item de estrutura física ou condição observável que a foto comprova; **não** para item de natureza documental, independentemente da criticidade.
 - Um mesmo ID é reutilizado em vários templates da Parte B sem duplicação de texto.
 
 ---
@@ -57,15 +57,15 @@ Este documento define o catálogo de itens de inspeção do aplicativo (Parte A)
 
 | ID | Descrição do item | Referência | Criticidade | Exige foto |
 |----|-------------------|------------|-------------|------------|
-| RAD-01 | Plano de Proteção Radiológica (PPR) mantido no local de trabalho e à disposição, dentro do prazo de vigência | 32.4.2 | critical | Sim |
+| RAD-01 | Plano de Proteção Radiológica (PPR) mantido no local de trabalho e à disposição, dentro do prazo de vigência | 32.4.2 | normal | Não |
 | RAD-02 | Trabalhadores em áreas com fontes de radiação ionizante sob monitoração individual de dose (dosímetro em uso) | 32.4.3 | critical | Sim |
 | RAD-03 | Áreas da instalação radiativa sinalizadas com o símbolo internacional de presença de radiação nos acessos controlados | 32.4.12 | critical | Sim |
-| RAD-04 | Sala de manipulação e armazenamento de fontes com revestimento impermeável, bancadas lisas recobertas, pia com cuba de no mínimo 40 cm e torneiras sem controle manual | 32.4.13.2 | critical | Sim |
+| RAD-04 | Sala de manipulação e armazenamento de fontes com revestimento impermeável, bancadas lisas recobertas, pia com cuba de no mínimo 40 cm e torneiras sem controle manual | 32.4.13.2 | normal | Sim |
 | RAD-05 | Ausência de alimentos, bebidas, cosméticos e bens pessoais nos locais onde são manipulados ou armazenados materiais radioativos ou rejeitos | 32.4.13.2.2 | critical | Sim |
 | RAD-06 | Local de decaimento de rejeitos radioativos em área de acesso controlado, sinalizado, com blindagem adequada e compartimentos de segregação | 32.4.13.6 | critical | Sim |
 | RAD-07 | Quarto de internação para administração de radiofármacos com blindagem, sanitário privativo, biombo blindado junto ao leito, sinalização externa e acesso controlado | 32.4.13.7 | critical | Sim |
 | RAD-08 | Salas de tratamento de radioterapia com portas com sistema de intertravamento e indicadores luminosos de equipamento em operação (interno e externo) | 32.4.14.1 | critical | Sim |
-| RAD-09 | Alvará de Funcionamento vigente e Programa de Garantia da Qualidade mantidos no local de trabalho (radiodiagnóstico) | 32.4.15.1 | critical | Sim |
+| RAD-09 | Alvará de Funcionamento vigente e Programa de Garantia da Qualidade mantidos no local de trabalho (radiodiagnóstico) | 32.4.15.1 | normal | Não |
 | RAD-10 | Sala de raios X com sinalização nas portas de acesso (símbolo internacional e inscrição de entrada restrita) e sinalização luminosa vermelha com aviso de advertência | 32.4.15.3 | critical | Sim |
 | RAD-11 | Equipamentos móveis de raios X com cabo disparador de comprimento mínimo de 2 metros | 32.4.15.6 | critical | Sim |
 | RAD-12 | Equipamentos de fluoroscopia com cortina ou saiote plumbífero inferior e lateral e sistema de alarme de nível de dose | 32.4.15.8 | critical | Sim |
@@ -163,10 +163,10 @@ Este documento define o catálogo de itens de inspeção do aplicativo (Parte A)
 | PFC-02 | Descarte de objetos perfurocortantes realizado pelo próprio trabalhador que os utilizou | 32.2.4.14 | critical | Sim |
 | PFC-03 | Materiais perfurocortantes com dispositivo de segurança em uso, quando existente, disponível e tecnicamente possível | Anexo III item 5.1 | critical | Sim |
 | PFC-04 | Coletores de descarte de perfurocortantes disponíveis nos pontos de uso (controle de engenharia) | Anexo III item 5.1 | critical | Sim |
-| PFC-05 | Plano de Prevenção de Riscos de Acidentes com Materiais Perfurocortantes elaborado e disponível | 32.2.4.16 | critical | Sim |
-| PFC-06 | Cronograma de implementação do plano de prevenção e comprovação da implantação disponíveis | Anexo III item 8.3 | critical | Sim |
-| PFC-07 | Comprovação da capacitação para prevenção de acidentes com perfurocortantes, com data, carga horária, conteúdo e identificação do instrutor | Anexo III item 7.2 | critical | Sim |
-| PFC-08 | Procedimentos de registro e investigação de acidentes e situações de risco com perfurocortantes implantados e documentados | Anexo III item 3.3 | critical | Sim |
+| PFC-05 | Plano de Prevenção de Riscos de Acidentes com Materiais Perfurocortantes elaborado e disponível | 32.2.4.16 | normal | Não |
+| PFC-06 | Cronograma de implementação do plano de prevenção e comprovação da implantação disponíveis | Anexo III item 8.3 | normal | Não |
+| PFC-07 | Comprovação da capacitação para prevenção de acidentes com perfurocortantes, com data, carga horária, conteúdo e identificação do instrutor | Anexo III item 7.2 | normal | Não |
+| PFC-08 | Procedimentos de registro e investigação de acidentes e situações de risco com perfurocortantes implantados e documentados | Anexo III item 3.3 | normal | Não |
 
 ---
 
