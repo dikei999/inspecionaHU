@@ -194,20 +194,26 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
           .eq('template_id', selected!.id)
           .order('order_index');
 
-      if (mounted) {
-        setState(() {
-          _itens.addAll(items.map(
-            (item) => _ChecklistItemForm(
-              descricao: item['description'] as String,
-              referencia: (item['nr32_reference'] as String?) ?? '',
-              critico: (item['criticality'] as String) == 'critical',
-              requiresPhoto: item['requires_photo'] as bool,
-            ),
-          ));
-        });
+      if (!mounted) return;
+
+      if (items.isEmpty) {
         _showSnack(
-            '${items.length} itens importados de "${selected!.title}".');
+            'O template "${selected!.title}" não possui itens para importar.',
+            error: true);
+        return;
       }
+
+      setState(() {
+        _itens.addAll(items.map(
+          (item) => _ChecklistItemForm(
+            descricao: item['description'] as String,
+            referencia: (item['nr32_reference'] as String?) ?? '',
+            critico: (item['criticality'] as String) == 'critical',
+            requiresPhoto: item['requires_photo'] as bool,
+          ),
+        ));
+      });
+      _showSnack('${items.length} itens importados de "${selected!.title}".');
     } catch (_) {
       if (mounted) _showSnack('Erro ao importar template.', error: true);
     }
