@@ -64,6 +64,9 @@ task_due_soon (24h antes) → Inspetor push | task_overdue → Inspetor push | d
 
 ## TEMPLATES NR-32
 Globais (Super Admin, hospital_id=NULL) + Locais (Diretor, hospital_id=X). Criar checklist "do zero" ou "usar template" → COPIA itens. Original intacto.
+**Biblioteca NR-32** (docs/BIBLIOTECA_NR32.md, aprovada pelo orientador): 97 itens em 10 seções (IDs BIO/QUI/RAD/RES/REF/LAV/LIM/MAN/GER/PFC) + 11 templates globais por setor, carregados por seed_nr32_library() (migration_nr32_library.sql). Fonte da verdade: docs/nr32.pdf → docs/nr32_texto.md. Item sem cláusula literal na NR-32 NÃO existe (NR-23/17/06/24/RDC/NBR proibidas).
+**Categorias** (AppConstants.nr32Categories) = as 10 seções da biblioteca ("32.2 Riscos Biológicos" … "Anexo III — Perfurocortantes"). Dropdowns de categoria (form_setor/form_template) usam nr32CategoryOptions(): valor legado salvo entra como opção extra, nunca quebra.
+**Norma visível**: lib/core/constants/nr32_clauses.dart (texto literal das cláusulas usadas) + lib/widgets/nr32_clause_chip.dart — chip tocável (bottom sheet com cláusula + criticidade) em resposta_checklist e relatorio_individual; referência fora do mapa = chip não tocável. PDF exporta seção final "Base normativa" (referências citadas em ordem crescente com texto integral).
 
 ## STATUS DESENVOLVIMENTO — Estado atual (jul/2026)
 ✅ Fase 1-2: Supabase configurado, tabelas+RLS, Flutter setup, auth, cadastro, login, aguardo, roteamento
@@ -71,6 +74,9 @@ Globais (Super Admin, hospital_id=NULL) + Locais (Diretor, hospital_id=X). Criar
 ✅ Redesign visual: fontes EMBUTIDAS em assets/fonts/ — Sora (títulos/AppBar, w400-800) + Manrope (corpo, w400-700), google_fonts REMOVIDO; AppColors com escala tonal + AppShadows (card/elevated/primaryGlow em uso), DashboardHeader azul institucional (canto inferior 24px, linha 3px brandGreen na base — único uso decorativo do verde) nos 4 dashboards com donut/HeaderMetric em versão clara; widgets reutilizáveis em lib/widgets/ (StatCard, StatusBadge/ResponseBadge, EmptyState, SkeletonLoader, AppLogo, NotificationBell, charts), dashboards com fl_chart, transições fade-forward
 ✅ Exportação: lib/core/services/report_export_service.dart — PDF (pdf+printing, fotos via signed URL re-gerada, NC crítica em destaque) e Excel (abas Resumo/Itens, share_plus); botões na relatorio_individual_screen; audit_log export_pdf/export_excel
 ✅ Notificações in-app: NotificationProvider (lib/core/services/notification_service.dart) — Supabase Realtime + flutter_local_notifications + badge no sino; notificacoes_screen real (marcar lida/todas, navegação contextual por reference_id); inicia no login, encerra no logout
+✅ Biblioteca NR-32 (set/2026): docs/nr32_texto.md + docs/BIBLIOTECA_NR32.md; migration_nr32_library.sql (seed_nr32_library(): 11 templates globais, correção idempotente do seed demo — desativa itens NR-23, preenche nr32_reference); seeds demo limpos (extintor/rota de fuga NR-23 removidos); nr32_clauses.dart + Nr32ClauseChip; Base normativa no PDF; permissões INTERNET/CAMERA no AndroidManifest
+✅ Docs de entrega: docs/ESCOPO_ENTREGA.md (bolsista × instituição), docs/PUBLICACAO_LOJAS.md (guia — publicação NÃO realizada), docs/DEPLOY_WEB.md, docs/FIREBASE_SETUP.md
 ⚠️ migration_notifications.sql (raiz): PRECISA ser executada no SQL Editor — triggers (report_validated agora vem SÓ do trigger, o app não insere mais ao validar) + pg_cron (due_soon/overdue/draft_reminder) + coluna notifications.reference_id + Realtime publication
+⚠️ migration_nr32_library.sql (raiz): PRECISA ser executada no SQL Editor (depois dos demo RPCs) e em seguida SELECT seed_nr32_library();
 🔧 FCM: scaffold pronto atrás de FirebaseConfig.enabled (false até configurar) — passo a passo em docs/FIREBASE_SETUP.md; plugin google-services NÃO aplicado no Gradle de propósito
 ⬜ Offline real (Drift é STUB — offline_sync_service.dart); auto-save atual com retry+backoff, fila de reenvio e indicador salvando/salvo/erro; Testes

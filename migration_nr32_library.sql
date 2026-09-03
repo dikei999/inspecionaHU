@@ -71,7 +71,7 @@ BEGIN
   -- ══════════════════════════════════════════════════════════
   -- Catálogo (Parte A da biblioteca) — fonte única do texto
   -- ══════════════════════════════════════════════════════════
-  DROP TABLE IF EXISTS nr32_lib;
+  DROP TABLE IF EXISTS pg_temp.nr32_lib;
   CREATE TEMP TABLE nr32_lib (
     code           TEXT PRIMARY KEY,
     description    TEXT NOT NULL,
@@ -192,7 +192,7 @@ BEGIN
   -- ══════════════════════════════════════════════════════════
   -- Templates por setor (Parte B da biblioteca)
   -- ══════════════════════════════════════════════════════════
-  DROP TABLE IF EXISTS nr32_tpl;
+  DROP TABLE IF EXISTS pg_temp.nr32_tpl;
   CREATE TEMP TABLE nr32_tpl (
     ord      INT,
     title    TEXT,
@@ -302,7 +302,7 @@ BEGIN
     -- remanescentes, casando por description exata.
     -- "Sinalização de risco biológico visível" fica de fora de
     -- propósito: não há cláusula literal correspondente na NR-32.
-    DROP TABLE IF EXISTS demo_map;
+    DROP TABLE IF EXISTS pg_temp.demo_map;
     CREATE TEMP TABLE demo_map (
       description TEXT PRIMARY KEY,
       nr32_reference TEXT,

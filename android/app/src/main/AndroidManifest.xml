@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Acesso à rede (Supabase). Obrigatório declarar no manifest principal:
+         em release não há o merge automático dos manifests de debug/profile. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Foto de inspeção é câmera-only (galeria bloqueada por regra de negócio) -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <!-- Android 13+ exige permissão de runtime para exibir notificações -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
