@@ -189,7 +189,9 @@ class _FormSetorScreenState extends State<FormSetorScreen> {
                 initialValue: _categoria,
                 items: [
                   const DropdownMenuItem(value: null, child: Text('Nenhuma')),
-                  ...AppConstants.nr32Categories
+                  // Valor legado já salvo entra como opção extra para não
+                  // quebrar o dropdown após a mudança da lista de categorias.
+                  ...AppConstants.nr32CategoryOptions(_categoria)
                       .map((c) => DropdownMenuItem(value: c, child: Text(c))),
                 ],
                 onChanged: (v) => setState(() => _categoria = v),

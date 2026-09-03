@@ -252,12 +252,14 @@ BEGIN
     VALUES (NULL, 'Template NR-32 Demo', 'Template de exemplo para testes', 'Geral', 'global', v_director_id, 'active')
     RETURNING id INTO v_template_id;
 
-    INSERT INTO checklist_template_items (template_id, order_index, description, criticality, requires_photo)
+    -- Itens NR-23 (extintor/rota de fuga) removidos: não pertencem à
+    -- NR-32 (ver docs/BIBLIOTECA_NR32.md, seção "Itens descartados").
+    -- "Sinalização de risco biológico visível" fica sem nr32_reference:
+    -- não há cláusula literal correspondente na NR-32.
+    INSERT INTO checklist_template_items (template_id, order_index, description, nr32_reference, criticality, requires_photo)
     VALUES
-      (v_template_id, 1, 'EPI disponível e em bom estado', 'normal', false),
-      (v_template_id, 2, 'Sinalização de risco biológico visível', 'normal', false),
-      (v_template_id, 3, 'Extintor de incêndio dentro da validade', 'critical', true),
-      (v_template_id, 4, 'Rota de fuga desobstruída', 'normal', false);
+      (v_template_id, 1, 'EPI disponível e em bom estado', '32.2.4.7', 'normal', true),
+      (v_template_id, 2, 'Sinalização de risco biológico visível', NULL, 'normal', false);
   END IF;
 
   -- ── Checklist 1: Lavanderia ───────────────────────────────────
@@ -268,13 +270,12 @@ BEGIN
     VALUES (v_sector_lavanderia, v_hospital_id, 'Inspeção NR-32 — Lavanderia', 'weekly', v_director_id, 'active')
     RETURNING id INTO v_checklist_1;
 
-    INSERT INTO checklist_items (checklist_id, order_index, description, criticality, requires_photo, status)
+    INSERT INTO checklist_items (checklist_id, order_index, description, nr32_reference, criticality, requires_photo, status)
     VALUES
-      (v_checklist_1, 1, 'EPI disponível e em bom estado', 'normal', false, 'active'),
-      (v_checklist_1, 2, 'Separação de roupa suja/limpa respeitada', 'normal', false, 'active'),
-      (v_checklist_1, 3, 'Extintor de incêndio dentro da validade', 'critical', true, 'active'),
-      (v_checklist_1, 4, 'Piso sem risco de escorregamento', 'normal', false, 'active'),
-      (v_checklist_1, 5, 'Sinalização de risco biológico visível', 'normal', false, 'active');
+      (v_checklist_1, 1, 'EPI disponível e em bom estado', '32.2.4.7', 'normal', true, 'active'),
+      (v_checklist_1, 2, 'Separação de roupa suja/limpa respeitada', '32.7.1', 'normal', true, 'active'),
+      (v_checklist_1, 3, 'Piso sem risco de escorregamento', '32.10.1', 'normal', true, 'active'),
+      (v_checklist_1, 4, 'Sinalização de risco biológico visível', NULL, 'normal', false, 'active');
   END IF;
 
   -- ── Checklist 2: Centro Cirúrgico ─────────────────────────────
@@ -285,12 +286,11 @@ BEGIN
     VALUES (v_sector_centro_cirurgico, v_hospital_id, 'Inspeção NR-32 — Centro Cirúrgico', 'daily', v_director_id, 'active')
     RETURNING id INTO v_checklist_2;
 
-    INSERT INTO checklist_items (checklist_id, order_index, description, criticality, requires_photo, status)
+    INSERT INTO checklist_items (checklist_id, order_index, description, nr32_reference, criticality, requires_photo, status)
     VALUES
-      (v_checklist_2, 1, 'Autoclave funcionando corretamente', 'critical', true, 'active'),
-      (v_checklist_2, 2, 'Descarte de perfurocortantes adequado', 'normal', false, 'active'),
-      (v_checklist_2, 3, 'Rota de fuga desobstruída', 'normal', false, 'active'),
-      (v_checklist_2, 4, 'EPI disponível e em bom estado', 'normal', false, 'active');
+      (v_checklist_2, 1, 'Autoclave funcionando corretamente', '32.9.3', 'critical', true, 'active'),
+      (v_checklist_2, 2, 'Descarte de perfurocortantes adequado', '32.5.3.2', 'critical', true, 'active'),
+      (v_checklist_2, 3, 'EPI disponível e em bom estado', '32.2.4.7', 'normal', true, 'active');
   END IF;
 
   -- ── Tarefas do Inspetor ────────────────────────────────────────

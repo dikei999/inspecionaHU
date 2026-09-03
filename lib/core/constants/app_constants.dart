@@ -2,21 +2,31 @@
 class AppConstants {
   AppConstants._();
 
+  /// Seções da NR-32 usadas como categoria (fonte: docs/BIBLIOTECA_NR32.md).
   static const List<String> nr32Categories = [
-    'Gerenciamento de Resíduos (RSS)',
-    'Produtos Químicos',
-    'Radiações Ionizantes',
-    'Radiações Não Ionizantes',
-    'Ergonomia',
-    'Segurança Biológica',
-    'EPIs e EPC',
-    'Instalações Físicas',
-    'Esterilização e Desinfecção',
-    'Lavanderia',
-    'Preparo e Distribuição de Alimentos',
-    'Manutenção Predial',
-    'Geral / Outros',
+    '32.2 Riscos Biológicos',
+    '32.3 Riscos Químicos',
+    '32.4 Radiações Ionizantes',
+    '32.5 Resíduos',
+    '32.6 Conforto por Ocasião das Refeições',
+    '32.7 Lavanderias',
+    '32.8 Limpeza e Conservação',
+    '32.9 Manutenção de Máquinas e Equipamentos',
+    '32.10 Disposições Gerais',
+    'Anexo III — Perfurocortantes',
   ];
+
+  /// Itens de dropdown de categoria: inclui [current] como opção extra
+  /// quando é um valor legado que não está mais em [nr32Categories],
+  /// evitando assertion error do DropdownButtonFormField.
+  static List<String> nr32CategoryOptions(String? current) {
+    if (current == null ||
+        current.isEmpty ||
+        nr32Categories.contains(current)) {
+      return nr32Categories;
+    }
+    return [current, ...nr32Categories];
+  }
 
   static const List<String> brazilianStates = [
     'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
