@@ -75,14 +75,14 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
           .select()
           .eq('hospital_id', _hospitalId!)
           .eq('status', 'active')
-          .order('name');
+          .order('name', ascending: true);
 
       final templatesData = await _db
           .from('checklist_templates')
           .select()
           .eq('status', 'active')
           .or('scope.eq.global,and(scope.eq.local,hospital_id.eq.$_hospitalId)')
-          .order('title');
+          .order('title', ascending: true);
 
       if (mounted) {
         setState(() {
@@ -116,7 +116,7 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
         .select()
         .eq('checklist_id', widget.checklistId!)
         .eq('status', 'active')
-        .order('order_index');
+        .order('order_index', ascending: true);
 
     if (!mounted) return;
 
@@ -192,7 +192,7 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
           .from('checklist_template_items')
           .select()
           .eq('template_id', selected!.id)
-          .order('order_index');
+          .order('order_index', ascending: true);
 
       if (!mounted) return;
 

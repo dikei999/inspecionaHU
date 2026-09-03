@@ -44,7 +44,7 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
           .from('tasks')
           .select()
           .eq('inspector_id', uid)
-          .order('due_date');
+          .order('due_date', ascending: true);
 
       if (mounted) {
         setState(() {

@@ -43,7 +43,7 @@ class _TemplatesLocaisScreenState extends State<TemplatesLocaisScreen> {
           .select()
           .eq('scope', 'local')
           .eq('hospital_id', hospitalId)
-          .order('title');
+          .order('title', ascending: true);
 
       if (mounted) {
         setState(() {

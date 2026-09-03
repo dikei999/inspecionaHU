@@ -70,13 +70,13 @@ class _ConfiguracoesScreenState extends State<ConfiguracoesScreen>
               .eq('scope', 'local')
               .eq('hospital_id', hospitalId)
               .eq('status', 'active')
-              .order('title')
+              .order('title', ascending: true)
           : await _db
               .from('checklist_templates')
               .select()
               .eq('scope', 'global')
               .eq('status', 'active')
-              .order('title');
+              .order('title', ascending: true);
 
       final hospitalData = await _db
           .from('hospitals')

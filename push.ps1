@@ -1,3 +1,3 @@
 git add -A
-git commit -m "chore: fechamento NR-32 — biblioteca, norma no app, docs de entrega e build Android"
+git commit -m "fix: ordenacao invertida no postgrest, relatorio em lista unica, falha silenciosa de foto e reset do ambiente demo"
 git push

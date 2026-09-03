@@ -36,7 +36,7 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
       final hospitais = await _db
           .from('hospitals')
           .select()
-          .order('name');
+          .order('name', ascending: true);
 
       final directors = await _db
           .from('profiles')

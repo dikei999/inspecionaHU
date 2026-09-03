@@ -17,6 +17,7 @@ class _PainelDemoScreenState extends State<PainelDemoScreen> {
   bool _provisioning = false;
   bool _resetting = false;
   bool _seeding = false;
+  bool _wiping = false;
 
   void _snack(String msg, {bool error = false}) {
     if (!mounted) return;
@@ -71,9 +72,104 @@ class _PainelDemoScreenState extends State<PainelDemoScreen> {
     }
   }
 
+  /// Limpeza total do ambiente demo. Exige digitar LIMPAR para habilitar
+  /// o botão — ação irreversível (única exceção ao soft delete, restrita
+  /// ao hospital HU-DEMO).
+  Future<void> _limparDados() async {
+    final confirmCtrl = TextEditingController();
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final habilitado = confirmCtrl.text.trim().toUpperCase() == 'LIMPAR';
+          return AlertDialog(
+            title: const Text('Limpar dados de demonstração'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.nonCompliant.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: AppColors.nonCompliant.withValues(alpha: 0.35)),
+                  ),
+                  child: const Text(
+                    'Esta ação é IRREVERSÍVEL e restrita ao ambiente de '
+                    'demonstração (hospital HU-DEMO).',
+                    style: TextStyle(
+                      color: AppColors.nonCompliant,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Serão apagados os setores, checklists, itens, tarefas, '
+                  'inspeções, respostas e as fotos no Storage.\n\n'
+                  'São preservados: as 4 contas demo, o hospital HU-DEMO e '
+                  'os templates globais da biblioteca NR-32.',
+                  style: TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                const Text('Digite LIMPAR para habilitar o botão:',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: confirmCtrl,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(hintText: 'LIMPAR'),
+                  onChanged: (_) => setDialogState(() {}),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.nonCompliant),
+                onPressed: habilitado ? () => Navigator.pop(ctx, true) : null,
+                child: const Text('Limpar tudo'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    confirmCtrl.dispose();
+
+    if (confirmado != true || !mounted) return;
+
+    setState(() => _wiping = true);
+    try {
+      final result = await _db.rpc('reset_demo_data');
+      final map = result as Map<String, dynamic>;
+      final setores = map['setores'] as int? ?? 0;
+      final checklists = map['checklists'] as int? ?? 0;
+      final inspecoes = map['inspecoes'] as int? ?? 0;
+      final fotos = map['fotos_storage'] as int? ?? 0;
+      _snack('Ambiente demo limpo: $setores setor(es), $checklists '
+          'checklist(s), $inspecoes inspeção(ões) e $fotos foto(s).');
+    } on PostgrestException catch (e) {
+      _snack(e.message, error: true);
+    } catch (_) {
+      _snack('Erro ao limpar dados demo.', error: true);
+    } finally {
+      if (mounted) setState(() => _wiping = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final busy = _provisioning || _resetting || _seeding;
+    final busy = _provisioning || _resetting || _seeding || _wiping;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Painel Demo')),
@@ -138,6 +234,29 @@ class _PainelDemoScreenState extends State<PainelDemoScreen> {
             disabled: busy && !_seeding,
             onPressed: _popularDados,
           ),
+          const SizedBox(height: 28),
+          const Divider(color: AppColors.border, thickness: 0.5),
+          const SizedBox(height: 16),
+          Text('Zona de risco',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: AppColors.nonCompliant,
+                    fontWeight: FontWeight.w700,
+                  )),
+          const SizedBox(height: 8),
+          _DemoActionCard(
+            icon: Icons.delete_forever_outlined,
+            title: 'Limpar dados de demonstração',
+            subtitle:
+                'Apaga DEFINITIVAMENTE setores, checklists, tarefas, inspeções, '
+                'respostas e fotos do HU-DEMO. Ação irreversível, restrita ao '
+                'ambiente de demonstração. Contas demo e templates globais '
+                'NR-32 são preservados.',
+            buttonLabel: 'Limpar dados demo',
+            loading: _wiping,
+            disabled: busy && !_wiping,
+            onPressed: _limparDados,
+            destructive: true,
+          ),
         ],
       ),
     );
@@ -152,6 +271,7 @@ class _DemoActionCard extends StatelessWidget {
   final bool loading;
   final bool disabled;
   final VoidCallback onPressed;
+  final bool destructive;
 
   const _DemoActionCard({
     required this.icon,
@@ -161,6 +281,7 @@ class _DemoActionCard extends StatelessWidget {
     required this.loading,
     required this.disabled,
     required this.onPressed,
+    this.destructive = false,
   });
 
   @override
@@ -170,7 +291,11 @@ class _DemoActionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border, width: 0.5),
+        border: Border.all(
+            color: destructive
+                ? AppColors.nonCompliant.withValues(alpha: 0.4)
+                : AppColors.border,
+            width: destructive ? 1 : 0.5),
         boxShadow: AppShadows.card,
       ),
       child: Column(
@@ -178,7 +303,11 @@ class _DemoActionCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, color: AppColors.primary, size: 22),
+              Icon(icon,
+                  color: destructive
+                      ? AppColors.nonCompliant
+                      : AppColors.primary,
+                  size: 22),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(title, style: Theme.of(context).textTheme.titleSmall),
@@ -191,6 +320,10 @@ class _DemoActionCard extends StatelessWidget {
           SizedBox(
             height: 44,
             child: ElevatedButton(
+              style: destructive
+                  ? ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.nonCompliant)
+                  : null,
               onPressed: (loading || disabled) ? null : onPressed,
               child: loading
                   ? const SizedBox(

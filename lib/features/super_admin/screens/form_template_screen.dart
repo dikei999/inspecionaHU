@@ -67,7 +67,7 @@ class _FormTemplateScreenState extends State<FormTemplateScreen> {
           .from('checklist_template_items')
           .select()
           .eq('template_id', widget.templateId!)
-          .order('order_index');
+          .order('order_index', ascending: true);
 
       if (mounted) {
         _tituloCtrl.text = tmpl['title'] as String;

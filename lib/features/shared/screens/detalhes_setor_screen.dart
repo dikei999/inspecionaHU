@@ -487,7 +487,7 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
           .select()
           .eq('sector_id', widget.sectorId)
           .eq('status', 'active')
-          .order('title');
+          .order('title', ascending: true);
       if (mounted) {
         setState(() {
           _checklists =
@@ -1124,7 +1124,7 @@ class _EquipeTabState extends State<_EquipeTab> {
             .from('profiles')
             .select()
             .inFilter('id', ids)
-            .order('full_name');
+            .order('full_name', ascending: true);
         inspetores = (rows as List).map((e) => Profile.fromJson(e)).toList();
       }
 
@@ -1164,7 +1164,7 @@ class _EquipeTabState extends State<_EquipeTab> {
           .eq('hospital_id', hospitalId)
           .eq('role', 'inspector')
           .eq('status', 'active')
-          .order('full_name');
+          .order('full_name', ascending: true);
       todos = (rows as List).map((e) => Profile.fromJson(e)).toList();
 
       final links = await _db

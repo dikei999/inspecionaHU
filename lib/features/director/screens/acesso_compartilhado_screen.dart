@@ -55,7 +55,7 @@ class _AcessoCompartilhadoScreenState
           .select()
           .eq('hospital_id', _hospitalId!)
           .eq('status', 'active')
-          .order('name');
+          .order('name', ascending: true);
 
       final supsData = await _db
           .from('profiles')
@@ -63,7 +63,7 @@ class _AcessoCompartilhadoScreenState
           .eq('hospital_id', _hospitalId!)
           .eq('role', 'supervisor')
           .eq('status', 'active')
-          .order('full_name');
+          .order('full_name', ascending: true);
 
       final accessData = await _db
           .from('sector_access')

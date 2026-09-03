@@ -60,7 +60,7 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
           .select('*, checklists(title), sectors(name)')
           .eq('inspector_id', uid)
           .inFilter('status', ['pending', 'in_progress'])
-          .order('due_date');
+          .order('due_date', ascending: true);
 
       if (mounted) {
         setState(() {

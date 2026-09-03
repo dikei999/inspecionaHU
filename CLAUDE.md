@@ -25,6 +25,8 @@ Desativar Diretor: obrigatório vincular substituto antes. Desativar Supervisor 
 - Validação: muda status→validated, BLOQUEIA edição, notifica Inspetor
 - Acesso compartilhado: can_view e can_edit independentes, concedido por owner OU Diretor
 - Relatório duplicado: permitido com confirmação. Ambos ficam no histórico
+- **Soft delete: ÚNICA exceção** = reset_demo_data() (migration_demo_reset.sql), acionada no Painel Demo digitando LIMPAR. Apaga de verdade, mas SÓ no hospital HU-DEMO (WHERE hospital_id obrigatório) e só por super_admin. NÃO é precedente: dado real continua sendo soft delete sempre
+- **postgrest-dart: .order() é DESCENDENTE por padrão** (`ascending: false`). Toda ordenação crescente DEVE passar `ascending: true` explicitamente — omitir inverte a lista silenciosamente
 - Offline: last-write-wins + notificar se checklist mudou durante inspeção
 
 ## TABELAS (16)
@@ -78,5 +80,8 @@ Globais (Super Admin, hospital_id=NULL) + Locais (Diretor, hospital_id=X). Criar
 ✅ Docs de entrega: docs/ESCOPO_ENTREGA.md (bolsista × instituição), docs/PUBLICACAO_LOJAS.md (guia — publicação NÃO realizada), docs/DEPLOY_WEB.md, docs/FIREBASE_SETUP.md
 ⚠️ migration_notifications.sql (raiz): PRECISA ser executada no SQL Editor — triggers (report_validated agora vem SÓ do trigger, o app não insere mais ao validar) + pg_cron (due_soon/overdue/draft_reminder) + coluna notifications.reference_id + Realtime publication
 ⚠️ migration_nr32_library.sql (raiz): PRECISA ser executada no SQL Editor (depois dos demo RPCs) e em seguida SELECT seed_nr32_library();
+⚠️ migration_demo_reset.sql (raiz): PRECISA ser executada para habilitar o botão "Limpar dados demo" no Painel Demo
+⚠️ fix_order_index.sql (raiz): script de correção pontual do order_index invertido pelo bug do .order() — rodar UMA vez, passo a passo, conferindo antes do UPDATE
+✅ Relatório em lista única (set/2026): sem seção separada de NC, na tela e no PDF; observação e foto aparecem em todo item (C/NC/NA); tabela do PDF ganhou coluna Foto; criticidade usa selo neutro (não o ícone vermelho); foto que falha no download vira placeholder identificando o item
 🔧 FCM: scaffold pronto atrás de FirebaseConfig.enabled (false até configurar) — passo a passo em docs/FIREBASE_SETUP.md; plugin google-services NÃO aplicado no Gradle de propósito
 ⬜ Offline real (Drift é STUB — offline_sync_service.dart); auto-save atual com retry+backoff, fila de reenvio e indicador salvando/salvo/erro; Testes

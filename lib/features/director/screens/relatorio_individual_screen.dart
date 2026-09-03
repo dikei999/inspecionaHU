@@ -325,8 +325,6 @@ class _RelatorioIndividualScreenState
 
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
     final inspection = _inspection!;
-    final ncResponses =
-        _responses.where((r) => r.status == 'NC').toList();
 
     // Numeracao humana (1, 2, 3...) na ordem do checklist — mesma logica
     // usada no PDF e no Excel, para os numeros baterem entre si.
@@ -444,33 +442,10 @@ class _RelatorioIndividualScreenState
           ),
           const SizedBox(height: 16),
 
-          // ── Não conformidades em destaque ───────────────────────────────
-          if (ncResponses.isNotEmpty) ...[
-            Row(
-              children: [
-                const Icon(Icons.report_gmailerrorred,
-                    size: 18, color: AppColors.nonCompliant),
-                const SizedBox(width: 6),
-                Text('Não conformidades',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: AppColors.nonCompliant,
-                        )),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ...ncResponses.map((resp) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _NcCard(
-                    response: resp,
-                    item: _items[resp.checklistItemId],
-                    displayNumber: displayNumbers[resp.id],
-                  ),
-                )),
-            const SizedBox(height: 8),
-          ],
-
-          // ── Respostas ──────────────────────────────────────────────────
-          Text('Todos os itens',
+          // ── Lista única de itens, na ordem do checklist ─────────────────
+          // Não há seção separada de não conformidades: cada item exibe
+          // status, observação e foto no seu próprio card, sem repetição.
+          Text('Itens inspecionados',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
 
@@ -498,8 +473,7 @@ class _RelatorioIndividualScreenState
                         ResponseBadge(status: resp.status),
                         if (isCritical) ...[
                           const SizedBox(width: 6),
-                          const Icon(Icons.warning_amber,
-                              size: 16, color: AppColors.nonCompliant),
+                          const _CriticalTag(),
                         ],
                         const SizedBox(width: 8),
                         Expanded(
@@ -523,8 +497,9 @@ class _RelatorioIndividualScreenState
                         ),
                       ),
                     ],
-                    if (resp.status != 'NC' &&
-                        resp.observation != null &&
+                    // Observação e foto aparecem para qualquer status
+                    // (C, NC e NA) — a lista é única.
+                    if (resp.observation != null &&
                         resp.observation!.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(
@@ -532,9 +507,7 @@ class _RelatorioIndividualScreenState
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
-                    // Foto dos itens C/NA — a das NC ja aparece no card de
-                    // nao conformidade acima, nao duplica aqui.
-                    if (resp.status != 'NC' && resp.photoUrl != null) ...[
+                    if (resp.photoUrl != null) ...[
                       const SizedBox(height: 8),
                       _ResponsePhoto(
                         photoUrl: resp.photoUrl!,
@@ -687,111 +660,34 @@ class _ResponsePhoto extends StatelessWidget {
   }
 }
 
-/// Card de não conformidade com observação e foto (signed URL re-gerada).
-class _NcCard extends StatelessWidget {
-  final InspectionResponse response;
-  final ChecklistItem? item;
-  final int? displayNumber;
-
-  const _NcCard({required this.response, this.item, this.displayNumber});
+/// Selo neutro de criticidade — indica que o item é crítico sem usar a
+/// cor de não conformidade, que confundia itens Conformes com erro.
+class _CriticalTag extends StatelessWidget {
+  const _CriticalTag();
 
   @override
   Widget build(BuildContext context) {
-    final isCritical = item?.isCritical ?? false;
-
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: isCritical ? AppColors.nonCompliant50 : AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.nonCompliant
-              .withValues(alpha: isCritical ? 1.0 : 0.4),
-          width: isCritical ? 1.2 : 0.8,
-        ),
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: AppColors.border, width: 0.5),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (isCritical) ...[
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.nonCompliant,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Text(
-                'NC CRÍTICA',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  letterSpacing: 0.6,
-                ),
-              ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(Icons.priority_high, size: 11, color: AppColors.textSecondary),
+          SizedBox(width: 2),
+          Text(
+            'CRÍTICO',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+              color: AppColors.textSecondary,
             ),
-            const SizedBox(height: 8),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _ItemNumberBadge(number: displayNumber),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  item?.description ?? 'Item removido',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-              ),
-            ],
           ),
-          if (item?.nr32Reference != null) ...[
-            const SizedBox(height: 4),
-            // Tocável quando a cláusula existe no mapa (abre bottom
-            // sheet com o texto integral da norma).
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Nr32ClauseChip(
-                reference: item!.nr32Reference!,
-                isCritical: item!.isCritical,
-              ),
-            ),
-          ],
-          if (response.observation != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: AppColors.nonCompliant.withValues(alpha: 0.25)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.comment_outlined,
-                      size: 14, color: AppColors.nonCompliant),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      response.observation!,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          if (response.photoUrl != null) ...[
-            const SizedBox(height: 8),
-            _ResponsePhoto(
-              photoUrl: response.photoUrl!,
-              capturedAt: response.photoCapturedAt,
-            ),
-          ],
         ],
       ),
     );

@@ -70,7 +70,7 @@ class _ConvidarUsuarioScreenState extends State<ConvidarUsuarioScreen> {
             .select()
             .eq('hospital_id', hospitalId)
             .eq('status', 'active')
-            .order('name');
+            .order('name', ascending: true);
         sectors = (data as List).map((e) => Sector.fromJson(e)).toList();
       } else {
         // Supervisor: setores que possui (owner) + os com can_edit.

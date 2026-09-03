@@ -134,8 +134,8 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
           .select()
           .eq('checklist_id', _task!.checklistId)
           .eq('status', 'active')
-          .order('order_index')
-          .order('id');
+          .order('order_index', ascending: true)
+          .order('id', ascending: true);
       _items = (itemsData as List)
           .map((e) => ChecklistItem.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -381,10 +381,14 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
         format: CompressFormat.jpeg,
       );
 
-      if (compressed == null || !mounted) {
-        setState(() => state.uploading = false);
+      if (compressed == null) {
+        if (mounted) {
+          setState(() => state.uploading = false);
+          _showPhotoError('Não foi possível processar a foto. Tente novamente.');
+        }
         return;
       }
+      if (!mounted) return;
 
       final compressedFile = File(compressed.path);
       final sizeKb = (await compressedFile.length() / 1024).round();
@@ -421,13 +425,45 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     } catch (e) {
       debugPrint('[RespostaChecklist] _takePhoto erro: $e');
       if (mounted) {
-        setState(() => state.uploading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erro ao capturar foto: $e'),
-          backgroundColor: AppColors.nonCompliant,
-        ));
+        // O thumbnail local é limpo junto: mantê-lo faria o Inspetor
+        // acreditar que a foto foi gravada quando o upload falhou, e a
+        // foto sumiria depois no relatório e no PDF.
+        setState(() {
+          state.uploading = false;
+          if (state.photoUrl == null) {
+            state.photoLocalPath = null;
+            state.photoCapturedAt = null;
+            state.photoSizeKb = null;
+          }
+        });
+        _showPhotoError(
+            'A foto NÃO foi salva. Verifique a conexão e tire novamente.');
       }
     }
+  }
+
+  /// Aviso de falha de foto — persistente e com ação de dispensar, para não
+  /// passar despercebido enquanto o Inspetor preenche o checklist.
+  void _showPhotoError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: AppColors.nonCompliant,
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: 'OK',
+          textColor: Colors.white,
+          onPressed: () {},
+        ),
+      ));
   }
 
   // ── Validação e envio ──────────────────────────────────────────────────────

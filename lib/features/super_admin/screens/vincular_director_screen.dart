@@ -117,7 +117,7 @@ class _NovoConviteTabState extends State<_NovoConviteTab>
           .from('hospitals')
           .select()
           .eq('status', 'active')
-          .order('name');
+          .order('name', ascending: true);
 
       final directorRows = await _db
           .from('profiles')

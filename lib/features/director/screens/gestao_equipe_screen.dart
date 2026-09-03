@@ -72,14 +72,14 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
           .select()
           .eq('hospital_id', _hospitalId)
           .eq('role', 'supervisor')
-          .order('full_name');
+          .order('full_name', ascending: true);
 
       final insp = await _db
           .from('profiles')
           .select()
           .eq('hospital_id', _hospitalId)
           .eq('role', 'inspector')
-          .order('full_name');
+          .order('full_name', ascending: true);
 
       final setores = await _loadSetoresGerenciaveis(profile);
 
@@ -109,7 +109,7 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
           .select()
           .eq('hospital_id', _hospitalId)
           .eq('status', 'active')
-          .order('name');
+          .order('name', ascending: true);
       return (data as List).map((e) => Sector.fromJson(e)).toList();
     }
 

@@ -31,7 +31,7 @@ class _TemplatesGlobaisScreenState extends State<TemplatesGlobaisScreen> {
           .from('checklist_templates')
           .select()
           .eq('scope', 'global')
-          .order('title');
+          .order('title', ascending: true);
 
       if (mounted) {
         setState(() {

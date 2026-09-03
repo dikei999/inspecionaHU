@@ -59,21 +59,21 @@ class _QuadroTarefasGestaoScreenState
           .from('tasks')
           .select()
           .eq('hospital_id', hospitalId)
-          .order('due_date');
+          .order('due_date', ascending: true);
 
       final setoresData = await _db
           .from('sectors')
           .select()
           .eq('hospital_id', hospitalId)
           .eq('status', 'active')
-          .order('name');
+          .order('name', ascending: true);
 
       final inspData = await _db
           .from('profiles')
           .select()
           .eq('hospital_id', hospitalId)
           .eq('role', 'inspector')
-          .order('full_name');
+          .order('full_name', ascending: true);
 
       // Busca checklists e inspetores para enriquecimento
       final checklistIds = tasksData

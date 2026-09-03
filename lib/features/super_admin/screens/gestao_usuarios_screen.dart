@@ -50,12 +50,12 @@ class _GestaoUsuariosScreenState extends State<GestaoUsuariosScreen> {
           .from('profiles')
           .select()
           .or('role.is.null,role.neq.super_admin')
-          .order('full_name');
+          .order('full_name', ascending: true);
 
       final hospitaisData = await _db
           .from('hospitals')
           .select()
-          .order('name');
+          .order('name', ascending: true);
 
       if (mounted) {
         setState(() {

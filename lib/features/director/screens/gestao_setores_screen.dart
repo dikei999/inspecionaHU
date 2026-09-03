@@ -93,7 +93,7 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
           .from('sectors')
           .select()
           .eq('hospital_id', hospitalId)
-          .order('name');
+          .order('name', ascending: true);
       return (data as List).cast<Map<String, dynamic>>();
     }
 

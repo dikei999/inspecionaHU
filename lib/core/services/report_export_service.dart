@@ -145,8 +145,6 @@ class ReportExportService {
       for (var i = 0; i < ordered.length; i++) ordered[i].id: i + 1,
     };
 
-    final ncResponses = ordered.where((r) => r.status == 'NC').toList();
-
     // Baixa as fotos de TODOS os itens que têm foto (C, NC e NA) antes de
     // montar o documento. Tratamento de erro individual: foto que falhar
     // vira placeholder e não impede a exportação.
@@ -188,17 +186,9 @@ class ReportExportService {
                   color: _pdfPrimary)),
           pw.SizedBox(height: 8),
           _pdfItemsTable(data, displayNumbers),
-          if (ncResponses.isNotEmpty) ...[
-            pw.SizedBox(height: 20),
-            pw.Text('Não conformidades',
-                style: pw.TextStyle(
-                    fontSize: 13,
-                    fontWeight: pw.FontWeight.bold,
-                    color: _pdfNonCompliant)),
-            pw.SizedBox(height: 8),
-            ...ncResponses.map((r) =>
-                _pdfNcBlock(data, r, photoBytes[r.id], displayNumbers[r.id])),
-          ],
+          // Sem seção separada de não conformidades: a tabela de itens já
+          // traz status e observação de cada item, e as fotos aparecem em
+          // "Evidências fotográficas" (a tabela não comporta imagem).
           if (withPhoto.isNotEmpty) ...[
             pw.SizedBox(height: 20),
             pw.Text('Evidências fotográficas',
@@ -387,11 +377,12 @@ class ReportExportService {
         2: const pw.FixedColumnWidth(34),
         3: const pw.FixedColumnWidth(38),
         4: const pw.FlexColumnWidth(3),
+        5: const pw.FixedColumnWidth(34),
       },
       children: [
         pw.TableRow(
           decoration: pw.BoxDecoration(color: _pdfPrimary),
-          children: ['Nº', 'Item', 'Status', 'Crítico', 'Observação']
+          children: ['Nº', 'Item', 'Status', 'Crítico', 'Observação', 'Foto']
               .map((h) => pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
                     child: pw.Text(h, style: headerStyle),
@@ -433,75 +424,19 @@ class ReportExportService {
                 padding: const pw.EdgeInsets.all(4),
                 child: pw.Text(r.observation ?? '', style: cellStyle),
               ),
+              // Indica que há evidência fotográfica na seção específica
+              // (a tabela não comporta imagem).
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(4),
+                child: pw.Text(r.photoUrl != null ? 'Sim' : '—',
+                    style: pw.TextStyle(
+                        fontSize: 8.5,
+                        color: r.photoUrl != null ? _pdfPrimary : _pdfGray)),
+              ),
             ],
           );
         }),
       ],
-    );
-  }
-
-  static pw.Widget _pdfNcBlock(ReportExportData data, InspectionResponse r,
-      Uint8List? photo, int? displayNumber) {
-    final item = data.items[r.checklistItemId];
-    final isCritical = item?.isCritical ?? false;
-
-    return pw.Container(
-      margin: const pw.EdgeInsets.only(bottom: 10),
-      padding: const pw.EdgeInsets.all(10),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(
-            color: _pdfNonCompliant, width: isCritical ? 1.4 : 0.8),
-        borderRadius: pw.BorderRadius.circular(6),
-        color: isCritical ? PdfColor.fromInt(0xFFFEF2F2) : PdfColors.white,
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Row(
-            children: [
-              if (isCritical)
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(
-                      horizontal: 5, vertical: 2),
-                  margin: const pw.EdgeInsets.only(right: 6),
-                  decoration: pw.BoxDecoration(
-                    color: _pdfNonCompliant,
-                    borderRadius: pw.BorderRadius.circular(3),
-                  ),
-                  child: pw.Text('NC CRÍTICA',
-                      style: pw.TextStyle(
-                          fontSize: 7,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white)),
-                ),
-              if (item?.nr32Reference != null)
-                pw.Text(item!.nr32Reference!,
-                    style: pw.TextStyle(fontSize: 8, color: _pdfPrimary)),
-            ],
-          ),
-          pw.SizedBox(height: 4),
-          pw.Text(
-              '${displayNumber != null ? '$displayNumber. ' : ''}'
-              '${item?.description ?? 'Item removido'}',
-              style:
-                  pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-          if (r.observation != null) ...[
-            pw.SizedBox(height: 4),
-            pw.Text('Observação: ${r.observation}',
-                style: const pw.TextStyle(fontSize: 9)),
-          ],
-          // A foto é exibida na seção "Evidências fotográficas" (que cobre
-          // itens C, NC e NA) — não repete aqui.
-          if (r.photoUrl != null) ...[
-            pw.SizedBox(height: 4),
-            pw.Text(
-                photo != null
-                    ? 'Foto anexada — ver Evidências fotográficas'
-                    : 'Foto anexada — indisponível no momento da exportação',
-                style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
-          ],
-        ],
-      ),
     );
   }
 
@@ -621,15 +556,36 @@ class ReportExportService {
                       fit: pw.BoxFit.contain,
                     ),
                   )
+                // Falha no download por signed URL não pode sumir em
+                // silêncio: vira placeholder identificando o item.
                 : pw.Container(
-                    height: 40,
+                    height: 90,
+                    padding: const pw.EdgeInsets.all(6),
                     alignment: pw.Alignment.center,
                     decoration: pw.BoxDecoration(
                       color: _pdfLightGray,
+                      border: pw.Border.all(color: _pdfGray, width: 0.5),
                       borderRadius: pw.BorderRadius.circular(4),
                     ),
-                    child: pw.Text('Foto indisponível',
-                        style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
+                    child: pw.Column(
+                      mainAxisAlignment: pw.MainAxisAlignment.center,
+                      children: [
+                        pw.Text(
+                            'Item ${displayNumber ?? '—'}: foto registrada,',
+                            textAlign: pw.TextAlign.center,
+                            style: pw.TextStyle(
+                                fontSize: 8,
+                                fontWeight: pw.FontWeight.bold,
+                                color: _pdfGray)),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                            'não foi possível baixá-la na exportação. '
+                            'A imagem segue armazenada no sistema.',
+                            textAlign: pw.TextAlign.center,
+                            style:
+                                pw.TextStyle(fontSize: 7, color: _pdfGray)),
+                      ],
+                    ),
                   ),
           ),
           pw.SizedBox(width: 10),

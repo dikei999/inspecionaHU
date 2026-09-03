@@ -58,7 +58,7 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
           .select()
           .eq('hospital_id', _hospitalId!)
           .eq('status', 'active')
-          .order('name');
+          .order('name', ascending: true);
 
       if (mounted) {
         setState(() {
@@ -96,7 +96,7 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
           .select()
           .eq('sector_id', setor.id)
           .eq('status', 'active')
-          .order('title');
+          .order('title', ascending: true);
 
       // Inspetores vinculados ao setor via inspector_sectors
       final inspLinks = await _db
