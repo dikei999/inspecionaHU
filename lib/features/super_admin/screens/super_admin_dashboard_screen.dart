@@ -5,8 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../app/routes.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../widgets/charts.dart';
-import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../shared/widgets/dashboard_header.dart';
 import '../../../widgets/confirm_dialog.dart';
@@ -27,15 +25,6 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
   int _totalUsuarios = 0;
   int _semVinculo = 0;
   int _totalTemplates = 0;
-  List<double> _usuariosPorPerfil = List.filled(5, 0);
-
-  static const _perfilLabels = [
-    'Diretor',
-    'Superv.',
-    'Inspetor',
-    'Admin',
-    'Sem vínc.'
-  ];
 
   @override
   void initState() {
@@ -55,21 +44,16 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
       ]);
 
       final profiles = results[1];
-      final porPerfil = List<double>.filled(5, 0);
+      // Só a contagem de contas sem vínculo continua sendo usada — ela
+      // alimenta o card numérico e o badge de "Vincular Diretor".
       int semVinculo = 0;
       for (final p in profiles) {
-        switch (p['role'] as String?) {
-          case 'director':
-            porPerfil[0] += 1;
-          case 'supervisor':
-            porPerfil[1] += 1;
-          case 'inspector':
-            porPerfil[2] += 1;
-          case 'super_admin':
-            porPerfil[3] += 1;
-          default:
-            porPerfil[4] += 1;
-            semVinculo++;
+        final role = p['role'] as String?;
+        if (role != 'director' &&
+            role != 'supervisor' &&
+            role != 'inspector' &&
+            role != 'super_admin') {
+          semVinculo++;
         }
       }
 
@@ -79,7 +63,6 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
           _totalUsuarios = profiles.length;
           _semVinculo = semVinculo;
           _totalTemplates = results[2].length;
-          _usuariosPorPerfil = porPerfil;
           _loading = false;
         });
       }
@@ -161,21 +144,10 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-            if (_loading)
-              const SkeletonDashboard()
-            else
-              // ── Gráfico: distribuição de usuários ──────────────────
-              ChartCard(
-                title: 'Usuários por perfil',
-                subtitle: 'Contas ativas na plataforma',
-                child: SingleSeriesBarChart(
-                  values: _usuariosPorPerfil,
-                  labels: _perfilLabels,
-                  tooltipSuffix: ' usuário(s)',
-                ),
-              ),
-
-            const SizedBox(height: 28),
+            // Gráfico "Usuários por perfil" removido: a escala vertical
+            // saía errada e ele não acrescentava nada aos cards numéricos,
+            // que já trazem os mesmos totais.
+            const SizedBox(height: 4),
 
             // ── Ações ──────────────────────────────────────────────────
             Text('Gestão', style: Theme.of(context).textTheme.titleLarge),
