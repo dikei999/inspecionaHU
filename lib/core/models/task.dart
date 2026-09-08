@@ -73,12 +73,36 @@ class Task {
           ? taskCode!
           : '#${id.substring(0, 8)}';
 
+  // ── Situação calculada a partir da data (regra 6.3) ────────────────────
+  // A comparação é por DIA, não por instante: uma tarefa com prazo hoje só
+  // fica atrasada amanhã, não à meia-noite de hoje.
+
+  static DateTime _hoje() {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
+
+  DateTime get _diaPrazo => DateTime(dueDate.year, dueDate.month, dueDate.day);
+
+  /// Prazo ainda por vir. Uma ocorrência futura de série recorrente NÃO é
+  /// pendência: ela é agendada, não conta em pendentes nem em atrasadas e
+  /// não gera notificação. Antes, criar uma série semanal já enchia o
+  /// painel do Inspetor de dívida que ainda nem existia.
+  bool get isAgendada =>
+      _diaPrazo.isAfter(_hoje()) && !isRespondida && !isCancelled;
+
+  /// Chegou o dia e ainda não foi enviada: é isto que cobra ação hoje.
+  bool get isPendenteHoje =>
+      _diaPrazo.isAtSameMomentAs(_hoje()) && !isRespondida && !isCancelled;
+
   /// overdue é CALCULADO — não armazenado como status (regra 6.3).
+  /// Só depois que o dia do prazo passou.
   bool get isOverdue =>
-      dueDate.isBefore(DateTime.now()) &&
-      status != 'submitted' &&
-      status != 'validated' &&
-      status != 'cancelled';
+      _diaPrazo.isBefore(_hoje()) && !isRespondida && !isCancelled;
+
+  /// Exige ação agora: venceu ou vence hoje. É o que alimenta as contagens
+  /// de pendência e as notificações.
+  bool get exigeAcao => isOverdue || isPendenteHoje;
 
   /// Pertence a uma série recorrente.
   bool get isRecorrente => seriesId != null && seriesTotal != null;

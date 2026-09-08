@@ -49,6 +49,11 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
   DateTime? _inicio; // série
   DateTime? _fim; // série
   String _frequencia = 'weekly';
+
+  /// A primeira ocorrência cai na data inicial (padrão) ou pula para a
+  /// próxima data da frequência. Começar hoje é o comportamento esperado
+  /// na maioria dos casos, então é o padrão.
+  bool _comecarHoje = true;
   final Set<String> _diasPersonalizados = {};
 
   String? _hospitalId;
@@ -151,12 +156,15 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
   List<DateTime> get _datasPrevistas {
     if (!_recorrente) return _prazo != null ? [_prazo!] : const [];
     if (_inicio == null || _fim == null) return const [];
-    return TaskSeriesUtils.gerarDatas(
+    final todas = TaskSeriesUtils.gerarDatas(
       inicio: _inicio!,
       fim: _fim!,
       frequencia: _frequencia,
       customDays: _diasPersonalizados.toList(),
     );
+    // "Próxima data": descarta a primeira ocorrência, que é a data inicial.
+    if (!_comecarHoje && todas.length > 1) return todas.sublist(1);
+    return todas;
   }
 
   bool get _excedeuLimite {
@@ -518,6 +526,28 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                       .toList(),
                   onChanged: (v) =>
                       setState(() => _frequencia = v ?? 'weekly'),
+                ),
+
+                const SizedBox(height: 12),
+                // Primeira ocorrência: hoje ou na próxima data da série.
+                Text('Primeira ocorrência',
+                    style: Theme.of(context).textTheme.bodyMedium),
+                const SizedBox(height: 6),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                      value: true,
+                      label: Text('Começa na data inicial'),
+                    ),
+                    ButtonSegment(
+                      value: false,
+                      label: Text('Só na próxima'),
+                    ),
+                  ],
+                  selected: {_comecarHoje},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (sel) =>
+                      setState(() => _comecarHoje = sel.first),
                 ),
 
                 if (_frequencia == 'custom') ...[

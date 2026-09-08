@@ -19,10 +19,22 @@ class AppDateUtils {
       _monthYearFormatter.format(date);
 
   /// Verifica se uma tarefa está atrasada.
-  /// Regra: due_date < now() AND status NOT IN ('submitted', 'validated')
+  /// Regra: due_date < HOJE AND status NOT IN ('submitted', 'validated',
+  /// 'cancelled').
+  ///
+  /// A comparação é por DIA: uma tarefa com prazo hoje só fica atrasada
+  /// amanhã. Comparar com now() a marcava como atrasada à meia-noite do
+  /// próprio dia do prazo.
   static bool isOverdue(DateTime dueDate, String status) {
-    if (status == 'submitted' || status == 'validated') return false;
-    return dueDate.isBefore(DateTime.now());
+    if (status == 'submitted' ||
+        status == 'validated' ||
+        status == 'cancelled') {
+      return false;
+    }
+    final agora = DateTime.now();
+    final hoje = DateTime(agora.year, agora.month, agora.day);
+    final prazo = DateTime(dueDate.year, dueDate.month, dueDate.day);
+    return prazo.isBefore(hoje);
   }
 
   /// Verifica se o prazo está chegando (< 24h).

@@ -223,9 +223,16 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
   @override
   Widget build(BuildContext context) {
     final profile = context.watch<AuthProvider>().profile;
-    final emAndamento =
-        _tasks.where((t) => t.task.status == 'in_progress').length;
-    final pendentes = _tasks.where((t) => t.task.status == 'pending').length;
+    // Em andamento (rascunho ja iniciado) continua contando so o que foi
+    // realmente aberto — e sempre uma tarefa cujo dia ja chegou.
+    final emAndamento = _tasks
+        .where((t) => t.task.status == 'in_progress' && !t.task.isAgendada)
+        .length;
+    // Só conta como pendência o que exige ação HOJE: ocorrência de série
+    // com data futura é agendada, não dívida. Antes, criar uma série
+    // semanal já enchia o painel de pendência inexistente.
+    final pendentes = _tasks.where((t) => t.task.isPendenteHoje).length;
+    final agendadas = _tasks.where((t) => t.task.isAgendada).length;
 
     return Scaffold(
       body: Column(
@@ -275,6 +282,12 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                         child: HeaderMetric(
                           value: emAndamento.toString(),
                           label: 'Em andamento',
+                        ),
+                      ),
+                      Expanded(
+                        child: HeaderMetric(
+                          value: agendadas.toString(),
+                          label: 'Agendadas',
                         ),
                       ),
                       Expanded(
