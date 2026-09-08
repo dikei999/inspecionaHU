@@ -431,8 +431,8 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                 title: const Text('Repetir'),
                 subtitle: Text(
                   _recorrente
-                      ? 'Cria uma tarefa para cada data do período.'
-                      : 'Tarefa única, com um prazo só.',
+                      ? 'Uma tarefa é criada para cada data do período.'
+                      : 'Uma tarefa única, com um só prazo.',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -528,26 +528,35 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                       setState(() => _frequencia = v ?? 'weekly'),
                 ),
 
-                const SizedBox(height: 12),
-                // Primeira ocorrência: hoje ou na próxima data da série.
+                const SizedBox(height: 14),
+                // A decisão real do Diretor aqui é se o Inspetor consegue
+                // responder ainda hoje.
                 Text('Primeira ocorrência',
                     style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 6),
                 SegmentedButton<bool>(
                   segments: const [
-                    ButtonSegment(
-                      value: true,
-                      label: Text('Começa na data inicial'),
-                    ),
+                    ButtonSegment(value: true, label: Text('Hoje')),
                     ButtonSegment(
                       value: false,
-                      label: Text('Só na próxima'),
+                      label: Text('Na próxima data da frequência'),
                     ),
                   ],
                   selected: {_comecarHoje},
                   showSelectedIcon: false,
                   onSelectionChanged: (sel) =>
                       setState(() => _comecarHoje = sel.first),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _comecarHoje
+                      ? 'A tarefa aparece imediatamente para o Inspetor.'
+                      : 'A primeira tarefa só aparece na próxima data da '
+                          'frequência escolhida.',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: AppColors.textSecondary),
                 ),
 
                 if (_frequencia == 'custom') ...[
@@ -617,8 +626,8 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
         ),
         child: Text(
           _frequencia == 'custom' && _diasPersonalizados.isEmpty
-              ? 'Escolha ao menos um dia da semana.'
-              : 'Defina início e fim para ver as datas.',
+              ? 'Selecione ao menos um dia da semana.'
+              : 'Informe início e fim para ver as datas geradas.',
           style: const TextStyle(color: AppColors.textSecondary),
         ),
       );
@@ -669,8 +678,8 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                   child: Text(
                     'O período gera mais de ${TaskSeriesUtils.maxOcorrencias} '
                     'ocorrências. Serão criadas as '
-                    '${TaskSeriesUtils.maxOcorrencias} primeiras — encurte o '
-                    'período ou espace a frequência.',
+                    '${TaskSeriesUtils.maxOcorrencias} primeiras. Para incluir '
+                    'todas, encurte o período ou espace a frequência.',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
