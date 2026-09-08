@@ -6,6 +6,7 @@ import '../../../app/routes.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/config/demo_credentials.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/offline_sync_service.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../widgets/hu_brasil_logo.dart';
 
@@ -24,8 +25,43 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = false;
   String? _error;
 
+  /// Rede de segurança (item 1): só aparece SEM conexão e COM perfil salvo
+  /// neste aparelho. Nas duas outras combinações o botão seria ruído.
+  bool _podeEntrarOffline = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checarEntradaOffline();
+    // A faixa de conexão já observa o connectivity_plus; reaproveitar o
+    // mesmo sinal evita um segundo monitor só para isto.
+    OfflineSyncService.online.addListener(_checarEntradaOffline);
+  }
+
+  Future<void> _checarEntradaOffline() async {
+    final temCache = await AuthProvider.temPerfilEmCache();
+    final semRede = !OfflineSyncService.online.value;
+    if (!mounted) return;
+    setState(() => _podeEntrarOffline = temCache && semRede);
+  }
+
+  Future<void> _continuarOffline() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final erro = await context.read<AuthProvider>().entrarOfflineManualmente();
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _error = erro;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    OfflineSyncService.online.removeListener(_checarEntradaOffline);
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
@@ -265,6 +301,37 @@ class _LoginScreenState extends State<LoginScreen> {
                                       : const Text('Entrar'),
                                 ),
                               ),
+
+                              // ── Continuar offline ────────────────────
+                              // Discreto e condicional: sem rede e com
+                              // perfil salvo. Garante a entrada mesmo se o
+                              // caminho automático falhar no cold start.
+                              if (_podeEntrarOffline) ...[
+                                const SizedBox(height: 10),
+                                OutlinedButton.icon(
+                                  onPressed:
+                                      _loading ? null : _continuarOffline,
+                                  icon: const Icon(Icons.wifi_off, size: 16),
+                                  label: const Text('Continuar offline'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.textSecondary,
+                                    side: const BorderSide(
+                                        color: AppColors.borderStrong),
+                                    minimumSize:
+                                        const Size(double.infinity, 42),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Sem conexão. Você pode entrar com os '
+                                  'dados salvos neste aparelho.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textDisabled,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),

@@ -35,13 +35,21 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _init() async {
     final session = _supabase.auth.currentSession;
+
+    // Diagnóstico do cold start — foi assim que a causa raiz apareceu.
+    final saiu = await OfflineStore.isSignedOut();
+    final cache = await OfflineStore.loadAnyProfile();
+    debugPrint('[AuthProvider._init] currentSession=${session != null} '
+        'expirada=${session?.isExpired} '
+        'isSignedOut=$saiu '
+        'cache=${cache != null ? cache.userId : "nenhum"}');
+
     if (session != null) {
       await _loadProfile();
     } else if (await _tentarEntrarOffline()) {
       // Sessão nula NÃO significa que o usuário saiu: o access token dura
-      // 1h e, sem rede, a renovação falha e o supabase_flutter descarta a
-      // sessão. Era por isso que fechar o app em modo avião levava de volta
-      // ao login. Havendo perfil em cache e nenhuma saída explícita, entra.
+      // 1h e, sem rede, a renovação falha. Havendo perfil em cache e
+      // nenhuma saída explícita, entra offline.
     } else {
       _status = AuthStatus.unauthenticated;
       notifyListeners();
@@ -81,10 +89,16 @@ class AuthProvider extends ChangeNotifier {
   /// gravada apenas em signOut() e apagada em todo login bem-sucedido.
   /// Retorna true se conseguiu entrar em modo offline.
   Future<bool> _tentarEntrarOffline() async {
-    if (await OfflineStore.isSignedOut()) return false;
+    if (await OfflineStore.isSignedOut()) {
+      debugPrint('[AuthProvider] offline barrado: usuário saiu de propósito');
+      return false;
+    }
 
     final cache = await OfflineStore.loadAnyProfile();
-    if (cache == null) return false;
+    if (cache == null) {
+      debugPrint('[AuthProvider] offline barrado: sem perfil em cache');
+      return false;
+    }
 
     _profile = Profile.fromJson(cache.profile);
     _status = AuthStatus.authenticated;
@@ -92,6 +106,35 @@ class AuthProvider extends ChangeNotifier {
     debugPrint('[AuthProvider] modo offline com perfil em cache');
     notifyListeners();
     return true;
+  }
+
+  /// Existe perfil em cache para oferecer "Continuar offline" na tela de
+  /// login? Não considera a marca de saída: se o usuário está diante da
+  /// tela de login, entrar é justamente o que ele quer fazer.
+  static Future<bool> temPerfilEmCache() async =>
+      (await OfflineStore.loadAnyProfile()) != null;
+
+  /// Rede de segurança (item 1): entra com o perfil em cache a pedido do
+  /// usuário, pelo botão "Continuar offline" da tela de login.
+  ///
+  /// Existe porque o caminho automático depende do estado interno do
+  /// gotrue no cold start, que não está sob nosso controle. Com este
+  /// botão, a demonstração funciona mesmo que o automático falhe.
+  Future<String?> entrarOfflineManualmente() async {
+    final cache = await OfflineStore.loadAnyProfile();
+    if (cache == null) {
+      return 'Nenhum perfil salvo neste aparelho. '
+          'É preciso entrar com internet ao menos uma vez.';
+    }
+    // O usuário pediu para entrar: a marca de uma saída anterior não pode
+    // bloquear, mas é limpa para o estado ficar coerente.
+    await OfflineStore.clearSignedOut();
+    _profile = Profile.fromJson(cache.profile);
+    _status = AuthStatus.authenticated;
+    _offlineMode = true;
+    debugPrint('[AuthProvider] entrada offline manual (botão do login)');
+    notifyListeners();
+    return null;
   }
 
   /// Volta ao normal quando a rede retorna: tenta renovar a sessão e, dando
@@ -118,6 +161,13 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _loadProfile() async {
     final uid = _supabase.auth.currentUser?.id;
     if (uid == null) {
+      // BURACO CORRIGIDO: este early-return não tinha nenhum fallback.
+      // No cold start sem rede o gotrue pode limpar a sessão enquanto esta
+      // função roda (recoverSession() não é aguardado pelo
+      // Supabase.initialize e tenta renovar um token expirado em paralelo).
+      // Sem uid, caía direto em unauthenticated e o cache nunca era lido.
+      debugPrint('[_loadProfile] uid nulo — tentando perfil em cache');
+      if (await _tentarEntrarOffline()) return;
       _status = AuthStatus.unauthenticated;
       notifyListeners();
       return;
@@ -284,6 +334,12 @@ class AuthProvider extends ChangeNotifier {
         email: email.trim(),
         password: password,
       );
+      // Limpa a marca AQUI também, não só dentro de _loadProfile: se a
+      // busca do perfil falhar por rede instável logo após um login bem
+      // sucedido, a marca de saída ficaria para trás e bloquearia a
+      // entrada offline seguinte. Vale para o login normal e para os
+      // botões de login rápido demo, que passam por este mesmo método.
+      await OfflineStore.clearSignedOut();
       await _loadProfile();
       debugPrint('[signIn] perfil carregado: ${_profile?.id}');
       return null;

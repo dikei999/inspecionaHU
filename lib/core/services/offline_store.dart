@@ -25,16 +25,31 @@ class OfflineStore {
 
   static Directory? _root;
 
-  static Future<Directory> _dir(String sub) async {
-    _root ??= Directory(
+  /// Raiz do armazenamento offline, criada sob demanda.
+  static Future<Directory> _raiz() async {
+    final r = _root ??= Directory(
       '${(await getApplicationDocumentsDirectory()).path}/offline',
     );
-    final d = Directory('${_root!.path}/$sub');
+    if (!await r.exists()) {
+      await r.create(recursive: true);
+    }
+    return r;
+  }
+
+  static Future<Directory> _dir(String sub) async {
+    final raiz = await _raiz();
+    if (sub == '.') return raiz;
+    final d = Directory('${raiz.path}/$sub');
     if (!await d.exists()) {
       await d.create(recursive: true);
     }
     return d;
   }
+
+  /// Só para testes: descarta a raiz memorizada, para que a próxima chamada
+  /// releia o path_provider. Em produção a raiz nunca muda.
+  @visibleForTesting
+  static void resetParaTeste() => _root = null;
 
   // ── 6.1 Perfil em cache ─────────────────────────────────────────────────
   // Sem isso o app cai para unauthenticated quando _loadProfile() falha por
