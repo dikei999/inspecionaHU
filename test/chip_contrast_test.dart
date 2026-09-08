@@ -16,6 +16,17 @@ void main() {
     expect(chip.backgroundColor, isNot(Colors.white));
   });
 
+  // No Material 3, FilterChip e ChoiceChip IGNORAM backgroundColor e
+  // selectedColor: quem vale e a propriedade `color`. Sem ela o chip
+  // continuava branco mesmo com backgroundColor definido — foi o que
+  // aconteceu na primeira tentativa de correcao.
+  test('color por estado esta definido (e o que o M3 usa de fato)', () {
+    expect(chip.color, isNotNull,
+        reason: 'sem `color` o FilterChip ignora o tema e fica branco');
+    expect(chip.color!.resolve(<WidgetState>{}), AppColors.surfaceSubtle);
+    expect(chip.color!.resolve({WidgetState.selected}), AppColors.primary);
+  });
+
   test('chip não selecionado tem borda visível', () {
     final lado = chip.side as WidgetStateBorderSide;
     final borda = lado.resolve(<WidgetState>{})!;

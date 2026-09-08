@@ -272,11 +272,21 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        // Nao selecionado: fundo claro + borda visivel.
+        // ATENCAO: no Material 3, FilterChip e ChoiceChip IGNORAM
+        // backgroundColor e selectedColor — quem vale e , um
+        // WidgetStateProperty. Era por isso que o chip continuava branco
+        // mesmo com backgroundColor definido: so a borda pegava.
         backgroundColor: AppColors.surfaceSubtle,
-        // Selecionado: azul primary com texto branco.
         selectedColor: AppColors.primary,
         checkmarkColor: Colors.white,
+        color: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return AppColors.background;
+          }
+          return states.contains(WidgetState.selected)
+              ? AppColors.primary
+              : AppColors.surfaceSubtle;
+        }),
         // FilterChip e ChoiceChip usam labelStyle nos dois estados, entao
         // a cor do texto precisa depender do estado selecionado — nao basta
         // definir secondaryLabelStyle.
