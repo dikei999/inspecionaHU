@@ -263,17 +263,45 @@ class AppTheme {
       ),
 
       // ── Chips: status badges arredondados ─────────────────────────────────
+      // Contraste do chip resolvido AQUI, uma vez, para todo o app.
+      // Antes: sem cor de fundo e com side: BorderSide.none, o chip nao
+      // selecionado ficava branco sobre branco e sumia — nos dias da
+      // semana da tarefa personalizada e na lista de convites enviados.
       chipTheme: ChipThemeData(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        labelStyle: const TextStyle(
+        // Nao selecionado: fundo claro + borda visivel.
+        backgroundColor: AppColors.surfaceSubtle,
+        // Selecionado: azul primary com texto branco.
+        selectedColor: AppColors.primary,
+        checkmarkColor: Colors.white,
+        // FilterChip e ChoiceChip usam labelStyle nos dois estados, entao
+        // a cor do texto precisa depender do estado selecionado — nao basta
+        // definir secondaryLabelStyle.
+        labelStyle: WidgetStateTextStyle.resolveWith((states) {
+          final selecionado = states.contains(WidgetState.selected);
+          return TextStyle(
+            fontFamily: fontBody,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selecionado ? Colors.white : AppColors.textPrimary,
+          );
+        }),
+        secondaryLabelStyle: const TextStyle(
           fontFamily: fontBody,
           fontSize: 12,
           fontWeight: FontWeight.w600,
+          color: Colors.white,
         ),
-        side: BorderSide.none,
+        side: WidgetStateBorderSide.resolveWith((states) {
+          final selecionado = states.contains(WidgetState.selected);
+          return BorderSide(
+            color: selecionado ? AppColors.primary : AppColors.borderStrong,
+            width: 0.8,
+          );
+        }),
       ),
 
       // ── Dialog ────────────────────────────────────────────────────────────
