@@ -42,6 +42,7 @@ import '../features/supervisor/screens/supervisor_dashboard_screen.dart';
 // Inspetor
 import '../features/inspector/screens/quadro_tarefas_screen.dart';
 import '../features/inspector/screens/historico_screen.dart';
+import '../features/inspector/screens/serie_tarefas_screen.dart';
 import '../features/inspector/screens/calendario_screen.dart';
 import '../features/inspector/screens/resposta_checklist_screen.dart';
 import '../core/services/offline_sync_service.dart';
@@ -367,6 +368,11 @@ class _AppState extends State<App> {
       GoRoute(
         path: AppRoutes.inspectorCalendario,
         builder: (context, state) => const CalendarioScreen(),
+      ),
+      GoRoute(
+        path: '/inspector/serie/:id',
+        builder: (context, state) =>
+            SerieTarefasScreen(seriesId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: AppRoutes.inspectorHistorico,

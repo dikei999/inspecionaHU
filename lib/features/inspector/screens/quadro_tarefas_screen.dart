@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/task.dart';
+import '../../../core/models/task_series.dart';
 import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/notification_bell.dart';
@@ -115,9 +116,20 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
     return _tasks.where((tv) {
       if (_filter == 'overdue') return tv.task.isOverdue;
       if (_filter == 'in_progress') return tv.task.status == 'in_progress';
-      if (_filter == 'pending') return tv.task.status == 'pending';
+      if (_filter == 'pending') return tv.task.isPendenteHoje;
       return true;
     }).toList();
+  }
+
+  /// Séries viram UM card; avulsas continuam individuais. Sem isto, uma
+  /// série de 14 datas ocupava 14 cards no painel.
+  List<TaskGroup> get _grupos {
+    final vistas = {for (final tv in _tasks) tv.task.id: tv};
+    return TaskGroup.agrupar(
+      _filtered.map((tv) => tv.task).toList(),
+      checklistTitle: (t) => vistas[t.id]?.checklistTitle ?? 'Checklist',
+      sectorName: (t) => vistas[t.id]?.sectorName ?? 'Setor',
+    );
   }
 
   int get _overdueCount => _tasks.where((tv) => tv.task.isOverdue).length;
@@ -377,25 +389,48 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                                 ? 'Quando um Supervisor ou Diretor atribuir uma tarefa, ela aparecerá aqui.'
                                 : 'Selecione "Todas" para ver as demais tarefas.',
                           )
-                        : ListView.separated(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _filtered.length,
-                            separatorBuilder: (context, index) =>
-                                const SizedBox(height: 10),
-                            itemBuilder: (ctx, i) => _TaskCard(
-                              taskView: _filtered[i],
-                              baixada:
-                                  _baixadas.contains(_filtered[i].task.id),
-                              baixando:
-                                  _baixando == _filtered[i].task.id,
-                              onDownload: () => _toggleDownload(_filtered[i]),
-                              onTap: () async {
-                                await ctx.push(AppRoutes.responderChecklist(
-                                    _filtered[i].task.id));
-                                _load(); // recarrega após retornar
+                        : Builder(builder: (ctx) {
+                            final grupos = _grupos;
+                            return ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(
+                                  16, 16, 16, 96),
+                              itemCount: grupos.length,
+                              separatorBuilder: (context, index) =>
+                                  const SizedBox(height: 10),
+                              itemBuilder: (ctx, i) {
+                                final g = grupos[i];
+
+                                // Série: um card que abre a tela dela.
+                                if (g.isSerie) {
+                                  return _SerieCard(
+                                    grupo: g,
+                                    onTap: () async {
+                                      await ctx.push(
+                                          AppRoutes.serieTarefas(
+                                              g.seriesId!));
+                                      _load();
+                                    },
+                                  );
+                                }
+
+                                // Avulsa: card individual, sem mudança.
+                                final tv = _tasks.firstWhere(
+                                    (v) => v.task.id == g.unica.id);
+                                return _TaskCard(
+                                  taskView: tv,
+                                  baixada: _baixadas.contains(tv.task.id),
+                                  baixando: _baixando == tv.task.id,
+                                  onDownload: () => _toggleDownload(tv),
+                                  onTap: () async {
+                                    await ctx.push(
+                                        AppRoutes.responderChecklist(
+                                            tv.task.id));
+                                    _load();
+                                  },
+                                );
                               },
-                            ),
-                          ),
+                            );
+                          }),
                   ),
                       ],
                     ),
@@ -470,6 +505,179 @@ class _FilterChip extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Card de uma SÉRIE recorrente: um único card para todas as ocorrências,
+/// com progresso e o próximo prazo. Tocar abre a tela da série.
+class _SerieCard extends StatelessWidget {
+  final TaskGroup grupo;
+  final VoidCallback onTap;
+
+  const _SerieCard({required this.grupo, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final proxima = grupo.proxima;
+    final temAtraso = grupo.atrasadas > 0;
+    final venceHoje = proxima?.isPendenteHoje ?? false;
+
+    // A cor segue a situação mais urgente da série.
+    final Color cor = temAtraso
+        ? AppColors.nonCompliant
+        : venceHoje
+            ? AppColors.pending
+            : grupo.concluida
+                ? AppColors.compliant
+                : AppColors.primary;
+
+    final String situacao = temAtraso
+        ? '${grupo.atrasadas} atrasada(s)'
+        : grupo.concluida
+            ? 'Série concluída'
+            : venceHoje
+                ? 'Vence hoje'
+                : proxima != null
+                    ? 'Próxima em '
+                        '${AppDateUtils.formatDate(proxima.dueDate)}'
+                    : 'Sem ocorrências abertas';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            color: temAtraso ? AppColors.nonCompliant50 : AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: temAtraso
+                  ? AppColors.nonCompliant.withValues(alpha: 0.4)
+                  : AppColors.border,
+              width: temAtraso ? 1.0 : 0.5,
+            ),
+            boxShadow: AppShadows.card,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: cor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              grupo.checklistTitle,
+                              style: Theme.of(context).textTheme.titleSmall,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary50,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.event_repeat_outlined,
+                                    size: 11, color: AppColors.primary),
+                                const SizedBox(width: 4),
+                                Text(
+                                  grupo.progresso,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.domain_outlined,
+                              size: 13, color: AppColors.textSecondary),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              grupo.sectorName,
+                              style: Theme.of(context).textTheme.bodySmall,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            temAtraso
+                                ? Icons.warning_amber_rounded
+                                : grupo.concluida
+                                    ? Icons.check_circle_outline
+                                    : Icons.calendar_today_outlined,
+                            size: 13,
+                            color: cor,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            situacao,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: cor,
+                                  fontWeight: temAtraso || venceHoje
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                ),
+                          ),
+                          if (grupo.agendadas > 0) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              '· ${grupo.agendadas} agendada(s)',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(color: AppColors.textDisabled),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right,
+                    size: 18, color: AppColors.textSecondary),
+              ],
+            ),
+          ),
         ),
       ),
     );

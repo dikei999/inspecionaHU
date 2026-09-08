@@ -10,6 +10,7 @@ import '../../../core/models/checklist.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/models/sector.dart';
 import '../../../core/models/task.dart';
+import '../../../core/models/task_series.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../../widgets/status_badge.dart';
@@ -135,6 +136,18 @@ class _QuadroTarefasGestaoScreenState
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Uma série vira um card só, como no painel do Inspetor. Sem isso o
+  /// quadro de gestão repetia a mesma tarefa uma vez por ocorrência.
+  List<TaskGroup> get _grupos {
+    final vistas = {for (final tv in _filtered) tv.task.id: tv};
+    return TaskGroup.agrupar(
+      _filtered.map((tv) => tv.task).toList(),
+      checklistTitle: (t) =>
+          vistas[t.id]?.checklist?.title ?? 'Checklist removido',
+      sectorName: (t) => vistas[t.id]?.sector?.name ?? '—',
+    );
   }
 
   void _applyFilters() {
@@ -288,12 +301,21 @@ class _QuadroTarefasGestaoScreenState
                         _load();
                       },
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(
-                          AppDimensions.screenPadding),
-                      itemCount: _filtered.length,
+                  : Builder(builder: (ctx) {
+                      final grupos = _grupos;
+                      return ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(
+                          AppDimensions.screenPadding,
+                          AppDimensions.screenPadding,
+                          AppDimensions.screenPadding,
+                          96),
+                      itemCount: grupos.length,
                       itemBuilder: (ctx, i) {
-                        final tv = _filtered[i];
+                        final g = grupos[i];
+                        // A série é representada pela próxima ocorrência
+                        // relevante; o card mostra o progresso do conjunto.
+                        final tv = _filtered.firstWhere(
+                            (v) => v.task.id == (g.proxima ?? g.unica).id);
                         final task = tv.task;
                         return Card(
                           child: InkWell(
@@ -356,8 +378,9 @@ class _QuadroTarefasGestaoScreenState
                                               ],
                                             ),
                                       ),
-                                      // Posição na série recorrente.
-                                      if (task.seriesLabel != null) ...[
+                                      // Progresso da série, não a posição
+                                      // de uma ocorrência solta.
+                                      if (g.isSerie) ...[
                                         const SizedBox(width: 6),
                                         Container(
                                           padding:
@@ -379,7 +402,7 @@ class _QuadroTarefasGestaoScreenState
                                                   color: AppColors.primary),
                                               const SizedBox(width: 3),
                                               Text(
-                                                task.seriesLabel!,
+                                                g.progresso,
                                                 style: const TextStyle(
                                                   fontSize: 10,
                                                   fontWeight:
@@ -455,7 +478,8 @@ class _QuadroTarefasGestaoScreenState
                           ),
                         );
                       },
-                    ),
+                    );
+                    }),
             ),
     );
   }

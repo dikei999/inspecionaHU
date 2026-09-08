@@ -68,6 +68,10 @@ class AppRoutes {
   // ── Inspetor ─────────────────────────────────────────────────────────────
   static const inspectorDashboard = '/inspector';
   static const inspectorCalendario = '/inspector/calendario';
+  /// Ocorrencias de uma serie recorrente.
+  static String serieTarefas(String seriesId) =>
+      '/inspector/serie/$seriesId';
+
   static const inspectorHistorico = '/inspector/historico';
   static String responderChecklist(String taskId) =>
       '/inspector/tarefas/$taskId/responder';
