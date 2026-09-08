@@ -101,16 +101,28 @@ class Profile {
   /// que a pessoa vê no app. Sem role definido, devolve só o nome.
   String get saudacao {
     final nome = firstName;
-    final cargo = switch (role) {
-      'super_admin' => 'Admin',
-      'director' => 'Diretor',
-      'supervisor' => 'Supervisor',
-      'inspector' => 'Inspetor',
-      _ => null,
-    };
+    final cargo = cargoDoSistema;
+
     if (nome.isEmpty) return cargo ?? '';
-    return cargo == null ? nome : '$cargo $nome';
+    if (cargo == null) return nome;
+
+    // Nome que já É o cargo não vira "Diretor Diretor". Acontece nas contas
+    // demo, cadastradas como "Diretor Demo", "Inspetor Demo" etc. — o
+    // primeiro nome sai igual ao rótulo do papel.
+    if (nome.toLowerCase() == cargo.toLowerCase()) return fullName.trim();
+
+    return '$cargo $nome';
   }
+
+  /// Rótulo do papel no sistema, em português. Null quando ainda não há
+  /// papel atribuído.
+  String? get cargoDoSistema => switch (role) {
+        'super_admin' => 'Admin',
+        'director' => 'Diretor',
+        'supervisor' => 'Supervisor',
+        'inspector' => 'Inspetor',
+        _ => null,
+      };
 
   bool get isActive => status == 'active';
   // super_admin has no hospital_id by design — only role matters for them

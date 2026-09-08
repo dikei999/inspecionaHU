@@ -66,6 +66,26 @@ void main() {
       expect(_p('Ana Lima', role: 'super_admin').saudacao, 'Admin Ana');
     });
 
+    // Item 4: as contas demo se chamam "Diretor Demo", "Inspetor Demo"...
+    // O primeiro nome sai igual ao cargo e a saudacao virava
+    // "Diretor Diretor".
+    test('nome igual ao cargo nao repete', () {
+      expect(_p('Diretor Demo', role: 'director').saudacao, 'Diretor Demo');
+      expect(_p('Inspetor Demo', role: 'inspector').saudacao, 'Inspetor Demo');
+      expect(_p('Supervisor Demo', role: 'supervisor').saudacao,
+          'Supervisor Demo');
+    });
+
+    test('comparacao ignora maiusculas', () {
+      expect(_p('DIRETOR Demo', role: 'director').saudacao, 'DIRETOR Demo');
+    });
+
+    test('nome que apenas comeca parecido nao e afetado', () {
+      // "Diretriz" nao e "Diretor": a saudacao normal vale.
+      expect(_p('Diretriz Souza', role: 'director').saudacao,
+          'Diretor Diretriz');
+    });
+
     test('sem papel definido, só o primeiro nome', () {
       expect(_p('Ana Lima').saudacao, 'Ana');
     });
