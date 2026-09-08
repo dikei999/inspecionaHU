@@ -372,10 +372,10 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                 decoration: const InputDecoration(labelText: 'Checklist *'),
                 initialValue: _checklistSel,
                 items: _checklists
+                    // Só o título: a frequência do checklist saiu da
+                    // interface — quem define frequência é esta tela.
                     .map((c) => DropdownMenuItem(
-                        value: c,
-                        child: Text(
-                            '${c.title}  (${AppConstants.frequencyLabel(c.frequency)})')))
+                        value: c, child: Text(c.title)))
                     .toList(),
                 onChanged: (v) => setState(() => _checklistSel = v),
                 validator: (v) => v == null ? 'Selecione um checklist' : null,

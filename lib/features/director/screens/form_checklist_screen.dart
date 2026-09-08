@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/checklist_template.dart';
 import '../../../core/models/sector.dart';
@@ -43,10 +41,14 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
 
   List<Sector> _setores = [];
   Sector? _setorSelecionado;
-  String _frequencia = 'monthly';
-  final Set<String> _diasCustom = {};
-  DateTime? _periodoInicio;
-  DateTime? _periodoFim;
+  /// Valor gravado em checklists.frequency, que é NOT NULL no schema.
+  ///
+  /// Prazo e frequência passaram a pertencer à ATRIBUIÇÃO DA TAREFA — o
+  /// checklist é só o conjunto de itens. A coluna continua no banco por
+  /// compatibilidade com os dados já existentes (nada foi deletado), mas
+  /// não é mais exibida nem editada. Como é NOT NULL com CHECK, um valor
+  /// fixo válido é gravado para o INSERT não falhar.
+  static const _frequenciaPadrao = 'monthly';
   final List<_ChecklistItemForm> _itens = [];
 
   List<ChecklistTemplate> _templates = [];
@@ -130,17 +132,6 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
     setState(() {
       _setorSelecionado =
           _setores.where((s) => s.id == sectorId).firstOrNull;
-      _frequencia = data['frequency'] as String;
-      if (data['custom_days'] != null) {
-        _diasCustom.addAll(
-            (data['custom_days'] as List).map((d) => d as String));
-      }
-      _periodoInicio = data['period_start'] != null
-          ? DateTime.parse(data['period_start'] as String)
-          : null;
-      _periodoFim = data['period_end'] != null
-          ? DateTime.parse(data['period_end'] as String)
-          : null;
       _itens.clear();
       for (final item in itemsData) {
         _itens.add(_ChecklistItemForm.fromJson(item));
@@ -224,24 +215,6 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
     }
   }
 
-  Future<void> _pickDate(bool isStart) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-    );
-    if (picked != null && mounted) {
-      setState(() {
-        if (isStart) {
-          _periodoInicio = picked;
-        } else {
-          _periodoFim = picked;
-        }
-      });
-    }
-  }
-
   Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
     if (_setorSelecionado == null) {
@@ -258,11 +231,6 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
         return;
       }
     }
-    if (_frequencia == 'custom' && _diasCustom.isEmpty) {
-      _showSnack('Selecione ao menos um dia da semana.', error: true);
-      return;
-    }
-
     setState(() => _loading = true);
     final auth = context.read<AuthProvider>();
     final profile = auth.profile!;
@@ -272,11 +240,8 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
         'sector_id': _setorSelecionado!.id,
         'hospital_id': _hospitalId,
         'title': _tituloCtrl.text.trim(),
-        'frequency': _frequencia,
-        'custom_days':
-            _frequencia == 'custom' ? _diasCustom.toList() : null,
-        'period_start': _periodoInicio?.toIso8601String().substring(0, 10),
-        'period_end': _periodoFim?.toIso8601String().substring(0, 10),
+        // NOT NULL no schema: grava o valor fixo e não usa mais na interface.
+        'frequency': _frequenciaPadrao,
         'created_by': profile.id,
         'status': 'active',
       };
@@ -286,13 +251,10 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
       if (_isEdit) {
         await _db
             .from('checklists')
-            .update({
-              'title': payload['title'],
-              'frequency': payload['frequency'],
-              'custom_days': payload['custom_days'],
-              'period_start': payload['period_start'],
-              'period_end': payload['period_end'],
-            })
+            // Editar checklist mexe só no título e nos itens. Frequência,
+            // período e dias existentes NÃO são sobrescritos: os dados
+            // antigos ficam preservados no banco.
+            .update({'title': payload['title']})
             .eq('id', widget.checklistId!);
         checklistId = widget.checklistId!;
 
@@ -374,7 +336,6 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
           body: const Center(child: CircularProgressIndicator()));
     }
 
-    final fmt = DateFormat('dd/MM/yyyy');
 
     return Scaffold(
       appBar: AppBar(
@@ -438,76 +399,35 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
               ),
               const SizedBox(height: 16),
             ],
-            DropdownButtonFormField<String>(
-              key: ValueKey(_frequencia),
-              decoration: const InputDecoration(labelText: 'Frequência *'),
-              initialValue: _frequencia,
-              items: AppConstants.checklistFrequencies
-                  .map((f) => DropdownMenuItem(
-                      value: f['value']!, child: Text(f['label']!)))
-                  .toList(),
-              onChanged: (v) =>
-                  setState(() => _frequencia = v ?? 'monthly'),
-            ),
-
-            // Seletor de dias para frequência customizada
-            if (_frequencia == 'custom') ...[
-              const SizedBox(height: 12),
-              Text('Dias da semana *',
-                  style: Theme.of(context).textTheme.bodyMedium),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: AppConstants.weekDays.map((d) {
-                  final selected = _diasCustom.contains(d['value']!);
-                  return FilterChip(
-                    label: Text(d['label']!),
-                    selected: selected,
-                    onSelected: (v) => setState(() {
-                      if (v) {
-                        _diasCustom.add(d['value']!);
-                      } else {
-                        _diasCustom.remove(d['value']!);
-                      }
-                    }),
-                    selectedColor: AppColors.primary.withAlpha(40),
-                    checkmarkColor: AppColors.primary,
-                  );
-                }).toList(),
+            // Prazo e frequência NÃO ficam mais aqui: pertencem à
+            // atribuição da tarefa, onde a série recorrente é definida.
+            // Definir nos dois lugares gerava conflito — o checklist é
+            // apenas o conjunto de itens.
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary50,
+                borderRadius:
+                    BorderRadius.circular(AppDimensions.radiusCard),
+                border: Border.all(color: AppColors.primary100, width: 0.5),
               ),
-            ],
-
-            const SizedBox(height: 16),
-
-            // Período
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () => _pickDate(true),
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                          labelText: 'Início do período'),
-                      child: Text(_periodoInicio != null
-                          ? fmt.format(_periodoInicio!)
-                          : 'Opcional'),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline,
+                      size: 16, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Prazo e frequência são definidos ao atribuir a '
+                      'tarefa, não aqui.',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: AppColors.primary),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: InkWell(
-                    onTap: () => _pickDate(false),
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                          labelText: 'Fim do período'),
-                      child: Text(_periodoFim != null
-                          ? fmt.format(_periodoFim!)
-                          : 'Opcional'),
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
 
             const SizedBox(height: 24),

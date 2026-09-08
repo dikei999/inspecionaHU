@@ -483,6 +483,11 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
   /// true = só os arquivados. Nada é deletado — é só uma visão.
   bool _verArquivados = false;
 
+  /// Resumo das tarefas de cada checklist: quantas em aberto e o próximo
+  /// prazo. Substitui a frequência do checklist, que deixou de existir na
+  /// interface — prazo e frequência agora pertencem à atribuição da tarefa.
+  Map<String, ({int abertas, DateTime? proximoPrazo})> _resumoTarefas = {};
+
   @override
   void initState() {
     super.initState();
@@ -498,12 +503,42 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
           .eq('sector_id', widget.sectorId)
           .eq('status', 'active')
           .order('title', ascending: true);
+      final todos = (data as List).map((e) => Checklist.fromJson(e)).toList();
+      final visiveis =
+          todos.where((c) => c.isArchived == _verArquivados).toList();
+
+      // Uma consulta em lote para todos os checklists da aba.
+      final resumo = <String, ({int abertas, DateTime? proximoPrazo})>{};
+      if (visiveis.isNotEmpty) {
+        final rows = await _db
+            .from('tasks')
+            .select('checklist_id, due_date, status')
+            .inFilter('checklist_id', visiveis.map((c) => c.id).toList())
+            .neq('status', 'cancelled');
+        for (final r in rows) {
+          final id = r['checklist_id'] as String;
+          final status = r['status'] as String;
+          final prazo = DateTime.tryParse(r['due_date'] as String);
+          final atual = resumo[id];
+          final emAberto =
+              status == 'pending' || status == 'in_progress';
+          // Próximo prazo = o mais próximo entre as tarefas em aberto.
+          DateTime? proximo = atual?.proximoPrazo;
+          if (emAberto && prazo != null) {
+            if (proximo == null || prazo.isBefore(proximo)) proximo = prazo;
+          }
+          resumo[id] = (
+            abertas: (atual?.abertas ?? 0) + (emAberto ? 1 : 0),
+            proximoPrazo: proximo,
+          );
+        }
+      }
+
       if (mounted) {
-        final todos = (data as List).map((e) => Checklist.fromJson(e)).toList();
         setState(() {
           // Arquivado some da lista de trabalho e só aparece no filtro.
-          _checklists =
-              todos.where((c) => c.isArchived == _verArquivados).toList();
+          _checklists = visiveis;
+          _resumoTarefas = resumo;
           _loading = false;
         });
       }
@@ -620,21 +655,19 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
     }
   }
 
-  String _frequencyLabel(String frequency) {
-    switch (frequency) {
-      case 'daily':
-        return 'Diário';
-      case 'weekly':
-        return 'Semanal';
-      case 'biweekly':
-        return 'Quinzenal';
-      case 'monthly':
-        return 'Mensal';
-      case 'custom':
-        return 'Personalizado';
-      default:
-        return frequency;
+  /// Subtítulo do card: o que as TAREFAS dizem sobre este checklist.
+  /// Antes exibia a frequência do próprio checklist, que saiu da interface.
+  String _resumoLabel(Checklist c) {
+    final r = _resumoTarefas[c.id];
+    if (r == null || r.abertas == 0) {
+      return 'Sem tarefa em aberto';
     }
+    final plural = r.abertas == 1 ? 'tarefa' : 'tarefas';
+    if (r.proximoPrazo == null) {
+      return '${r.abertas} $plural em aberto';
+    }
+    return '${r.abertas} $plural · próxima em '
+        '${AppDateUtils.formatDate(r.proximoPrazo!)}';
   }
 
   Future<void> _novoChecklist() async {
@@ -736,8 +769,8 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
                             ),
                             title: Text(c.title),
                             subtitle: Text(c.isArchived
-                                ? '${_frequencyLabel(c.frequency)} • Arquivado'
-                                : _frequencyLabel(c.frequency)),
+                                ? '${_resumoLabel(c)} • Arquivado'
+                                : _resumoLabel(c)),
                             trailing: widget.canEdit
                                 ? PopupMenuButton<String>(
                                     tooltip: 'Ações do checklist',
