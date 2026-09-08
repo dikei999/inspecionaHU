@@ -62,10 +62,12 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
       if (mounted) {
         setState(() {
           _items = hospitais
-              .map((h) => _HospitalWithDirector(
-                    hospital: Hospital.fromJson(h),
-                    director: dirMap[h['id'] as String],
-                  ))
+              .map(
+                (h) => _HospitalWithDirector(
+                  hospital: Hospital.fromJson(h),
+                  director: dirMap[h['id'] as String],
+                ),
+              )
               .toList();
           _loading = false;
         });
@@ -100,7 +102,8 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
           ElevatedButton(
             style: newStatus == 'inactive'
                 ? ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.nonCompliant)
+                    backgroundColor: AppColors.nonCompliant,
+                  )
                 : null,
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(label[0].toUpperCase() + label.substring(1)),
@@ -112,7 +115,10 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
     if (confirm != true || !mounted) return;
 
     try {
-      await _db.from('hospitals').update({'status': newStatus}).eq('id', hospital.id);
+      await _db
+          .from('hospitals')
+          .update({'status': newStatus})
+          .eq('id', hospital.id);
       await AuditService.log(
         userId: auth.profile!.id,
         action: '${label}_hospital',
@@ -120,7 +126,9 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
         entityId: hospital.id,
         details: {'name': hospital.name, 'status': newStatus},
       );
-      _showSnack('Hospital ${newStatus == 'active' ? 'reativado' : 'desativado'}.');
+      _showSnack(
+        'Hospital ${newStatus == 'active' ? 'reativado' : 'desativado'}.',
+      );
       _load();
     } catch (_) {
       _showSnack('Erro ao $label hospital.', error: true);
@@ -136,8 +144,10 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
     int setores;
     int usuarios;
     try {
-      final setoresData =
-          await _db.from('sectors').select('id').eq('hospital_id', hospital.id);
+      final setoresData = await _db
+          .from('sectors')
+          .select('id')
+          .eq('hospital_id', hospital.id);
       final usuariosData = await _db
           .from('profiles')
           .select('id')
@@ -190,7 +200,8 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.nonCompliant),
+              backgroundColor: AppColors.nonCompliant,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Apagar'),
           ),
@@ -219,10 +230,12 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
   }
 
   void _showSnack(String msg, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: error ? AppColors.nonCompliant : AppColors.compliant,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: error ? AppColors.nonCompliant : AppColors.compliant,
+      ),
+    );
   }
 
   @override
@@ -245,11 +258,19 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
                   ? const EmptyState(
                       icon: Icons.local_hospital_outlined,
                       title: 'Nenhum hospital cadastrado',
-                      subtitle: 'Cadastre um hospital para depois vincular o '
+                      subtitle:
+                          'Cadastre um hospital para depois vincular o '
                           'Diretor responsável.',
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.all(AppDimensions.screenPadding),
+                      padding: const EdgeInsets.fromLTRB(
+                        AppDimensions.screenPadding,
+                        AppDimensions.screenPadding,
+                        AppDimensions.screenPadding,
+                        // Folga para o botão flutuante não cobrir o
+                        // último item da lista.
+                        96,
+                      ),
                       itemCount: _items.length,
                       itemBuilder: (ctx, i) {
                         final item = _items[i];
@@ -262,32 +283,34 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
                                   ? AppColors.primary
                                   : AppColors.textDisabled,
                               child: Text(
-                                h.sigla.substring(0, h.sigla.length.clamp(0, 2)),
+                                h.sigla.substring(
+                                  0,
+                                  h.sigla.length.clamp(0, 2),
+                                ),
                                 style: const TextStyle(
-                                    color: Colors.white, fontSize: 12),
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
                             title: Text(h.name),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('${h.sigla}  •  ${h.city} — ${h.state}',
-                                    style:
-                                        Theme.of(context).textTheme.bodySmall),
+                                Text(
+                                  '${h.sigla}  •  ${h.city} — ${h.state}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
                                 if (dir != null)
                                   Text(
                                     'Diretor: ${dir.fullName}',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
+                                    style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(color: AppColors.primary),
                                   )
                                 else
                                   Text(
                                     'Sem Diretor vinculado',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
+                                    style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(color: AppColors.pending),
                                   ),
                               ],
@@ -297,7 +320,9 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
                               children: [
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: h.isActive
                                         ? AppColors.compliant.withAlpha(30)
@@ -324,16 +349,17 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
                                   itemBuilder: (_) => [
                                     PopupMenuItem(
                                       value: 'toggle',
-                                      child: Text(h.isActive
-                                          ? 'Desativar'
-                                          : 'Reativar'),
+                                      child: Text(
+                                        h.isActive ? 'Desativar' : 'Reativar',
+                                      ),
                                     ),
                                     const PopupMenuItem(
                                       value: 'apagar',
                                       child: Text(
                                         'Apagar',
                                         style: TextStyle(
-                                            color: AppColors.nonCompliant),
+                                          color: AppColors.nonCompliant,
+                                        ),
                                       ),
                                     ),
                                   ],

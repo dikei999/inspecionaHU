@@ -1298,6 +1298,10 @@ class _EquipeTab extends StatefulWidget {
 
 class _EquipeTabState extends State<_EquipeTab> {
   final _db = Supabase.instance.client;
+
+  /// A seção de acesso compartilhado é uma tela embutida sem FAB próprio —
+  /// a ação vem pelo cabeçalho da seção, como em "Inspetores vinculados".
+  final _acessoCtrl = AcessoCompartilhadoController();
   bool _loading = true;
   List<Profile> _inspetores = [];
 
@@ -1606,11 +1610,13 @@ class _EquipeTabState extends State<_EquipeTab> {
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
+                // Folga no fim para o botão flutuante não cobrir a última
+                // seção — 88 não bastava com a lista de convites embaixo.
                 padding: const EdgeInsets.fromLTRB(
                     AppDimensions.screenPadding,
                     AppDimensions.screenPadding,
                     AppDimensions.screenPadding,
-                    88),
+                    120),
                 children: [
                   Text(
                     'Supervisor responsável',
@@ -1711,18 +1717,37 @@ class _EquipeTabState extends State<_EquipeTab> {
 
                   // ── Acesso compartilhado DESTE setor ──────────────────
                   const SizedBox(height: 20),
-                  Text(
-                    'Acesso compartilhado',
-                    style: Theme.of(context).textTheme.titleSmall,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Acesso compartilhado',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                      if (widget.canEdit)
+                        TextButton.icon(
+                          onPressed: () => _acessoCtrl.conceder(),
+                          icon: const Icon(Icons.share_outlined, size: 16),
+                          label: const Text('Conceder'),
+                          style: TextButton.styleFrom(
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 6),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   // Altura limitada: as telas embutidas trazem Scaffold
-                  // proprio e nao podem crescer sem limite dentro da lista.
+                  // próprio e não podem crescer sem limite dentro da lista.
                   SizedBox(
-                    height: 260,
+                    height: 240,
                     child: AcessoCompartilhadoScreen(
                       embedded: true,
                       sectorId: widget.sector.id,
+                      controller: _acessoCtrl,
                     ),
                   ),
 

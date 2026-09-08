@@ -10,6 +10,13 @@ import '../../../core/services/audit_service.dart';
 import '../../../core/utils/cpf_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 
+/// Chave para o hospedeiro acionar "Conceder acesso" a partir do título da
+/// seção, já que no modo embutido a tela não tem botão flutuante próprio.
+class AcessoCompartilhadoController {
+  Future<void> Function()? _conceder;
+  Future<void> conceder() async => _conceder?.call();
+}
+
 class AcessoCompartilhadoScreen extends StatefulWidget {
   /// Quando true a tela é renderizada como aba dentro de outra Scaffold
   /// (Equipe) — sem AppBar própria. A lógica de negócio é a mesma.
@@ -19,10 +26,14 @@ class AcessoCompartilhadoScreen extends StatefulWidget {
   /// é assim que a aba Equipe do setor usa a tela.
   final String? sectorId;
 
+  /// Permite ao hospedeiro disparar a ação de conceder acesso.
+  final AcessoCompartilhadoController? controller;
+
   const AcessoCompartilhadoScreen({
     super.key,
     this.embedded = false,
     this.sectorId,
+    this.controller,
   });
 
   @override
@@ -30,8 +41,7 @@ class AcessoCompartilhadoScreen extends StatefulWidget {
       _AcessoCompartilhadoScreenState();
 }
 
-class _AcessoCompartilhadoScreenState
-    extends State<AcessoCompartilhadoScreen> {
+class _AcessoCompartilhadoScreenState extends State<AcessoCompartilhadoScreen> {
   final _db = Supabase.instance.client;
 
   bool _loading = true;
@@ -43,6 +53,7 @@ class _AcessoCompartilhadoScreenState
   @override
   void initState() {
     super.initState();
+    widget.controller?._conceder = _conceder;
     _load();
   }
 
@@ -81,7 +92,9 @@ class _AcessoCompartilhadoScreenState
           .from('sector_access')
           .select()
           .inFilter(
-              'sector_id', setoresData.map((s) => s['id'] as String).toList());
+            'sector_id',
+            setoresData.map((s) => s['id'] as String).toList(),
+          );
 
       final sectorMap = <String, Sector>{};
       for (final s in setoresData) {
@@ -134,22 +147,24 @@ class _AcessoCompartilhadoScreenState
                 decoration: const InputDecoration(labelText: 'Setor *'),
                 initialValue: sector,
                 items: _setores
-                    .map((s) =>
-                        DropdownMenuItem(value: s, child: Text(s.name)))
+                    .map((s) => DropdownMenuItem(value: s, child: Text(s.name)))
                     .toList(),
                 onChanged: (v) => setLocal(() => sector = v),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<Profile>(
                 key: ValueKey(supervisor),
-                decoration:
-                    const InputDecoration(labelText: 'Supervisor *'),
+                decoration: const InputDecoration(labelText: 'Supervisor *'),
                 initialValue: supervisor,
                 items: _supervisores
-                    .map((p) => DropdownMenuItem(
+                    .map(
+                      (p) => DropdownMenuItem(
                         value: p,
                         child: Text(
-                            '${p.fullName}  •  ${CpfUtils.mask(p.cpf)}')))
+                          '${p.fullName}  •  ${CpfUtils.mask(p.cpf)}',
+                        ),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) => setLocal(() => supervisor = v),
               ),
@@ -172,8 +187,9 @@ class _AcessoCompartilhadoScreenState
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancelar')),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
             ElevatedButton(
               onPressed: sector != null && supervisor != null
                   ? () => Navigator.pop(ctx, true)
@@ -227,11 +243,13 @@ class _AcessoCompartilhadoScreenState
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.nonCompliant),
+              backgroundColor: AppColors.nonCompliant,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Revogar'),
           ),
@@ -243,10 +261,7 @@ class _AcessoCompartilhadoScreenState
 
     final auth = context.read<AuthProvider>();
     try {
-      await _db
-          .from('sector_access')
-          .delete()
-          .eq('id', item.access.id);
+      await _db.from('sector_access').delete().eq('id', item.access.id);
 
       await AuditService.log(
         userId: auth.profile!.id,
@@ -268,10 +283,12 @@ class _AcessoCompartilhadoScreenState
   }
 
   void _showSnack(String msg, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: error ? AppColors.nonCompliant : AppColors.compliant,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: error ? AppColors.nonCompliant : AppColors.compliant,
+      ),
+    );
   }
 
   @override
@@ -281,54 +298,71 @@ class _AcessoCompartilhadoScreenState
       appBar: widget.embedded
           ? null
           : AppBar(title: const Text('Acesso Compartilhado')),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: widget.embedded ? 'fab_acesso_embedded' : null,
-        onPressed: _conceder,
-        icon: const Icon(Icons.share_outlined),
-        label: const Text('Conceder acesso'),
-      ),
+      // Embutida, a tela NÃO tem botão flutuante: ele se sobrepunha ao FAB
+      // da aba que a hospeda e cobria a lista logo abaixo. Nesse modo a
+      // ação vive no cabeçalho da seção, junto do título.
+      floatingActionButton: widget.embedded
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _conceder,
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Conceder acesso'),
+            ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
               child: _accesses.isEmpty
                   ? const Center(
-                      child: Text('Nenhum acesso compartilhado configurado.'))
+                      child: Text('Nenhum acesso compartilhado configurado.'),
+                    )
                   : ListView.builder(
-                      padding: const EdgeInsets.all(
-                          AppDimensions.screenPadding),
+                      // Embutida nao tem FAB, entao nao precisa da folga
+                      // de 96 — que dentro de 240px de altura comeria
+                      // metade da area util.
+                      padding: EdgeInsets.fromLTRB(
+                        AppDimensions.screenPadding,
+                        widget.embedded ? 4 : AppDimensions.screenPadding,
+                        AppDimensions.screenPadding,
+                        widget.embedded ? 8 : 96,
+                      ),
                       itemCount: _accesses.length,
                       itemBuilder: (ctx, i) {
                         final item = _accesses[i];
                         return Card(
                           child: ListTile(
-                            leading: const Icon(Icons.share_outlined,
-                                color: AppColors.primary),
+                            leading: const Icon(
+                              Icons.share_outlined,
+                              color: AppColors.primary,
+                            ),
                             title: Text(item.supervisor?.fullName ?? '—'),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                    'Setor: ${item.sector?.name ?? '—'}'),
+                                Text('Setor: ${item.sector?.name ?? '—'}'),
                                 Row(
                                   children: [
                                     if (item.access.canView)
                                       const _PermChip(
-                                          label: 'Visualização',
-                                          color: AppColors.primary),
+                                        label: 'Visualização',
+                                        color: AppColors.primary,
+                                      ),
                                     const SizedBox(width: 4),
                                     if (item.access.canEdit)
                                       const _PermChip(
-                                          label: 'Modificação',
-                                          color: AppColors.compliant),
+                                        label: 'Modificação',
+                                        color: AppColors.compliant,
+                                      ),
                                   ],
                                 ),
                               ],
                             ),
                             isThreeLine: true,
                             trailing: IconButton(
-                              icon: const Icon(Icons.remove_circle_outline,
-                                  color: AppColors.nonCompliant),
+                              icon: const Icon(
+                                Icons.remove_circle_outline,
+                                color: AppColors.nonCompliant,
+                              ),
                               tooltip: 'Revogar',
                               onPressed: () => _revogar(item),
                             ),
@@ -361,9 +395,14 @@ class _PermChip extends StatelessWidget {
         color: color.withAlpha(30),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(label,
-          style: TextStyle(color: color, fontSize: 11,
-              fontWeight: FontWeight.w600)),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }

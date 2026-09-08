@@ -32,8 +32,7 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final hospitalId =
-        context.read<AuthProvider>().profile?.hospitalId;
+    final hospitalId = context.read<AuthProvider>().profile?.hospitalId;
     if (hospitalId == null) {
       // Perfil ainda nao carregado: encerra o loading para
       // a tela nao ficar presa no skeleton indefinidamente.
@@ -110,8 +109,9 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
         .select('sector_id')
         .eq('supervisor_id', profile.id)
         .eq('can_edit', true);
-    final accessIds =
-        (accessRows as List).map((r) => r['sector_id'] as String).toList();
+    final accessIds = (accessRows as List)
+        .map((r) => r['sector_id'] as String)
+        .toList();
 
     final byId = <String, Map<String, dynamic>>{
       for (final e in (owned as List).cast<Map<String, dynamic>>())
@@ -150,12 +150,14 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             style: newStatus == 'inactive'
                 ? ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.nonCompliant)
+                    backgroundColor: AppColors.nonCompliant,
+                  )
                 : null,
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(label),
@@ -181,7 +183,9 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
         details: {'name': sector.name},
       );
 
-      _showSnack('Setor ${newStatus == 'active' ? 'reativado' : 'desativado'}.');
+      _showSnack(
+        'Setor ${newStatus == 'active' ? 'reativado' : 'desativado'}.',
+      );
       _load();
     } catch (_) {
       _showSnack('Erro ao alterar status.', error: true);
@@ -189,10 +193,12 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
   }
 
   void _showSnack(String msg, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: error ? AppColors.nonCompliant : AppColors.compliant,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: error ? AppColors.nonCompliant : AppColors.compliant,
+      ),
+    );
   }
 
   @override
@@ -215,11 +221,19 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
                   ? const EmptyState(
                       icon: Icons.domain_outlined,
                       title: 'Nenhum setor cadastrado',
-                      subtitle: 'Crie o primeiro setor para começar a montar '
+                      subtitle:
+                          'Crie o primeiro setor para começar a montar '
                           'checklists e atribuir tarefas.',
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.all(AppDimensions.screenPadding),
+                      padding: const EdgeInsets.fromLTRB(
+                        AppDimensions.screenPadding,
+                        AppDimensions.screenPadding,
+                        AppDimensions.screenPadding,
+                        // Folga para o botão flutuante não cobrir o
+                        // último item da lista.
+                        96,
+                      ),
                       itemCount: _items.length,
                       itemBuilder: (ctx, i) {
                         final item = _items[i];
@@ -227,8 +241,7 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
                         return Card(
                           child: ListTile(
                             onTap: () async {
-                              await context
-                                  .push(AppRoutes.detalhesSetor(s.id));
+                              await context.push(AppRoutes.detalhesSetor(s.id));
                               _load();
                             },
                             leading: CircleAvatar(
@@ -247,17 +260,17 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 if (s.nr32Category != null)
-                                  Text(s.nr32Category!,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall),
+                                  Text(
+                                    s.nr32Category!,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
                                 Text(
                                   item.supervisor != null
                                       ? 'Supervisor: ${item.supervisor!.fullName}'
                                       : 'Sem Supervisor (criado pelo Diretor)',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
+                                  style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(
                                         color: item.supervisor != null
                                             ? AppColors.primary
@@ -284,14 +297,18 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
                               },
                               itemBuilder: (_) => [
                                 const PopupMenuItem(
-                                    value: 'detalhes',
-                                    child: Text('Abrir detalhes')),
+                                  value: 'detalhes',
+                                  child: Text('Abrir detalhes'),
+                                ),
                                 const PopupMenuItem(
-                                    value: 'edit', child: Text('Editar')),
+                                  value: 'edit',
+                                  child: Text('Editar'),
+                                ),
                                 PopupMenuItem(
                                   value: 'toggle',
                                   child: Text(
-                                      s.isActive ? 'Desativar' : 'Reativar'),
+                                    s.isActive ? 'Desativar' : 'Reativar',
+                                  ),
                                 ),
                               ],
                             ),

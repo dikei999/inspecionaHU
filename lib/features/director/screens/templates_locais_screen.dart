@@ -30,8 +30,7 @@ class _TemplatesLocaisScreenState extends State<TemplatesLocaisScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final hospitalId =
-        context.read<AuthProvider>().profile?.hospitalId;
+    final hospitalId = context.read<AuthProvider>().profile?.hospitalId;
     if (hospitalId == null) {
       // Perfil ainda nao carregado: encerra o loading para
       // a tela nao ficar presa no skeleton indefinidamente.
@@ -78,12 +77,19 @@ class _TemplatesLocaisScreenState extends State<TemplatesLocaisScreen> {
                   ? const EmptyState(
                       icon: Icons.description_outlined,
                       title: 'Nenhum template local',
-                      subtitle: 'Crie um template para reaproveitar os mesmos '
+                      subtitle:
+                          'Crie um template para reaproveitar os mesmos '
                           'itens em vários checklists deste hospital.',
                     )
                   : ListView.builder(
-                      padding:
-                          const EdgeInsets.all(AppDimensions.screenPadding),
+                      padding: const EdgeInsets.fromLTRB(
+                        AppDimensions.screenPadding,
+                        AppDimensions.screenPadding,
+                        AppDimensions.screenPadding,
+                        // Folga para o botao flutuante nao cobrir o
+                        // ultimo item da lista.
+                        96,
+                      ),
                       itemCount: _templates.length,
                       itemBuilder: (ctx, i) {
                         final t = _templates[i];
@@ -97,9 +103,12 @@ class _TemplatesLocaisScreenState extends State<TemplatesLocaisScreen> {
                             ),
                             title: Text(t.title),
                             subtitle: t.nr32Category != null
-                                ? Text(t.nr32Category!,
-                                    style:
-                                        Theme.of(context).textTheme.bodySmall)
+                                ? Text(
+                                    t.nr32Category!,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  )
                                 : null,
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -107,25 +116,34 @@ class _TemplatesLocaisScreenState extends State<TemplatesLocaisScreen> {
                                 if (!t.isActive)
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 4),
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color:
-                                          AppColors.textDisabled.withAlpha(30),
+                                      color: AppColors.textDisabled.withAlpha(
+                                        30,
+                                      ),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: const Text('Inativo',
-                                        style: TextStyle(
-                                            color: AppColors.textDisabled,
-                                            fontSize: 12)),
+                                    child: const Text(
+                                      'Inativo',
+                                      style: TextStyle(
+                                        color: AppColors.textDisabled,
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   ),
                                 const SizedBox(width: 4),
-                                const Icon(Icons.chevron_right,
-                                    color: AppColors.textSecondary),
+                                const Icon(
+                                  Icons.chevron_right,
+                                  color: AppColors.textSecondary,
+                                ),
                               ],
                             ),
                             onTap: () async {
-                              await context
-                                  .push(AppRoutes.editarTemplateLocal(t.id));
+                              await context.push(
+                                AppRoutes.editarTemplateLocal(t.id),
+                              );
                               _load();
                             },
                           ),
