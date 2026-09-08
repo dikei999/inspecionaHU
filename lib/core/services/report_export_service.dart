@@ -14,6 +14,7 @@ import '../constants/nr32_clauses.dart';
 import '../models/checklist_item.dart';
 import '../models/inspection.dart';
 import '../models/inspection_response.dart';
+import '../../widgets/hu_brasil_logo.dart';
 
 /// Dados consolidados de um relatório de inspeção para exportação.
 class ReportExportData {
@@ -160,6 +161,11 @@ class ReportExportService {
             .buffer
             .asUint8List();
 
+    // Logo HU Brasil ao lado da marca do app (bloco 5). O arquivo e
+    // opcional: se nao estiver no bundle, o cabecalho sai sem ela em vez
+    // de a exportacao inteira falhar.
+    final huBrasilBytes = await _loadOptionalAsset(HuBrasilLogo.assetPath);
+
     final doc = pw.Document(
       title: 'Relatório de Inspeção NR-32 — ${data.checklistTitle}',
       author: 'InspecionaHU',
@@ -171,7 +177,7 @@ class ReportExportService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(36, 36, 36, 44),
-        header: (ctx) => _pdfHeader(data, logoBytes),
+        header: (ctx) => _pdfHeader(data, logoBytes, huBrasilBytes),
         footer: (ctx) => _pdfFooter(ctx, generatedAt),
         build: (ctx) => [
           pw.SizedBox(height: 12),
@@ -208,7 +214,20 @@ class ReportExportService {
     return doc.save();
   }
 
-  static pw.Widget _pdfHeader(ReportExportData data, Uint8List logoBytes) {
+  /// Carrega um asset opcional. Devolve null se nao estiver no bundle.
+  static Future<Uint8List?> _loadOptionalAsset(String path) async {
+    try {
+      return (await rootBundle.load(path)).buffer.asUint8List();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static pw.Widget _pdfHeader(
+    ReportExportData data,
+    Uint8List logoBytes,
+    Uint8List? huBrasilBytes,
+  ) {
     return pw.Container(
       padding: const pw.EdgeInsets.only(bottom: 10),
       decoration: pw.BoxDecoration(
@@ -237,6 +256,11 @@ class ReportExportService {
                   fontSize: 11,
                   fontWeight: pw.FontWeight.bold,
                   color: _pdfPrimary)),
+          // Logo HU Brasil, quando disponivel no bundle.
+          if (huBrasilBytes != null) ...[
+            pw.SizedBox(width: 10),
+            pw.Image(pw.MemoryImage(huBrasilBytes), height: 30),
+          ],
         ],
       ),
     );

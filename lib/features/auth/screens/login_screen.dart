@@ -6,6 +6,8 @@ import '../../../app/routes.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/config/demo_credentials.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../widgets/app_logo.dart';
+import '../../../widgets/hu_brasil_logo.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -300,6 +302,33 @@ class _LoginScreenState extends State<LoginScreen> {
                               color: AppColors.textDisabled,
                               letterSpacing: 0.2,
                             ),
+                          ),
+                        ),
+
+                        // ── Rodapé institucional ─────────────────────────
+                        // Identidade do InspecionaHU ao lado da logo HU
+                        // Brasil (bloco 5). A logo some sozinha se o arquivo
+                        // não estiver no bundle — a tela não quebra.
+                        const SizedBox(height: 20),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4, bottom: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              const AppLogo(
+                                variant: AppLogoVariant.iconOnly,
+                                height: 28,
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                width: 0.5,
+                                height: 26,
+                                color: AppColors.border,
+                              ),
+                              const SizedBox(width: 10),
+                              const HuBrasilLogo(height: 30),
+                            ],
                           ),
                         ),
                       ],
