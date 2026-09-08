@@ -30,6 +30,15 @@ class StatusBadge extends StatelessWidget {
     final (label, color, icon) = _config[status] ??
         (status, AppColors.textSecondary, Icons.help_outline);
 
+    // A cor do STATUS não muda — ela identifica o estado e é a mesma no
+    // ponto do calendário, na barra do card e aqui. O que muda é a cor do
+    // TEXTO deste badge: sentLight (#22C55E) rende só 2,28:1 sobre o fundo
+    // claro e o rótulo "Enviado" saía apagado. Para esse caso o texto usa
+    // o verde escuro que já existe na paleta, mantendo a leitura sem
+    // inventar cor nova.
+    final corTexto =
+        color == AppColors.sentLight ? AppColors.validatedDark : color;
+
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 8 : 10,
@@ -44,7 +53,7 @@ class StatusBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (!compact) ...[
-            Icon(icon, size: 12, color: color),
+            Icon(icon, size: 12, color: corTexto),
             const SizedBox(width: 4),
           ],
           Text(
@@ -52,7 +61,7 @@ class StatusBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: compact ? 10.5 : 11.5,
               fontWeight: FontWeight.w600,
-              color: color,
+              color: corTexto,
               letterSpacing: 0.1,
             ),
           ),
