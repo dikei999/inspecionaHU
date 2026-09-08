@@ -58,34 +58,32 @@ Future<bool> confirmAction(
 /// no ícone da AppBar em campo, sem internet, deixaria o Inspetor sem
 /// conseguir voltar a entrar.
 Future<bool> confirmSignOut(BuildContext context) async {
-  // O que existe no aparelho define o texto: sair APAGA o perfil em cache,
-  // os checklists baixados e a fila de envio. A mensagem antiga dizia que as
-  // respostas continuavam salvas, o que deixou de ser verdade.
+  // Sair NÃO apaga mais o perfil em cache nem os checklists baixados: eles
+  // ficam para que "Continuar offline" funcione depois do logout. O que a
+  // saída faz é bloquear a entrada automática — reabrir o app cai no login.
+  //
+  // A limpeza acontece quando OUTRO usuário entra com senha no aparelho.
   final p = await AuthProvider.pendenciasAntesDeSair();
   final semRede = !OfflineSyncService.online.value;
   if (!context.mounted) return false;
 
   final partes = <String>[];
+
   if (p.naFila > 0) {
-    partes.add(
-        '${p.naFila} resposta(s) na fila de envio serão PERDIDAS, pois ainda '
-        'não chegaram ao servidor.');
-  }
-  if (p.baixados > 0) {
-    partes.add('${p.baixados} checklist(s) baixado(s) para uso offline serão '
-        'removidos do aparelho.');
+    partes.add('${p.naFila} resposta(s) ainda não enviada(s) continuam '
+        'guardadas neste aparelho e serão enviadas no próximo acesso com '
+        'internet.');
   }
   if (p.temCache) {
-    partes.add('O acesso offline será perdido: entrar de novo exigirá '
-        'conexão com a internet.');
-  }
-  if (partes.isEmpty) {
+    partes.add('Para entrar de novo será preciso a senha. Sem internet, use '
+        '"Continuar offline" na tela de login.');
+  } else {
     partes.add('Será necessário conexão com a internet para entrar '
         'novamente.');
   }
 
-  // Fila pendente e sem rede é o pior caso: sair agora joga fora trabalho
-  // que ainda dá para enviar. O diálogo desencoraja em vez de facilitar.
+  // Fila pendente e sem rede: sair agora adia o envio de trabalho já feito.
+  // Não se perde nada, mas continua sendo melhor esperar.
   final arriscado = p.naFila > 0 && semRede;
   if (arriscado) {
     partes.add('Sem conexão no momento, não há como enviar antes de sair. '
@@ -94,11 +92,12 @@ Future<bool> confirmSignOut(BuildContext context) async {
 
   return confirmAction(
     context,
-    title: arriscado ? 'Sair e descartar a fila?' : 'Sair da conta?',
+    title: arriscado ? 'Sair com envios pendentes?' : 'Sair da conta?',
     message: partes.join('\n\n'),
-    confirmLabel: arriscado ? 'Sair e descartar' : 'Sair',
+    confirmLabel: 'Sair',
     cancelLabel: arriscado ? 'Aguardar conexão' : 'Cancelar',
     icon: arriscado ? Icons.warning_amber_rounded : Icons.logout,
+    destructive: arriscado,
   );
 }
 

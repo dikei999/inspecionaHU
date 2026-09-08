@@ -216,6 +216,16 @@ class AuthProvider extends ChangeNotifier {
       // Guarda o perfil para a próxima abertura sem rede (6.1) e limpa a
       // marca de saída: a partir daqui, sessão perdida = falha de rede.
       if (data != null) {
+        // Outro usuário entrando neste aparelho: o trabalho offline do
+        // anterior não pode ficar. É AQUI que a limpeza acontece, não no
+        // logout — assim o próprio usuário mantém o acesso offline depois
+        // de sair, e ninguém herda dados de outra pessoa.
+        final anterior = await OfflineStore.loadAnyProfile();
+        if (anterior != null && anterior.userId != uid) {
+          debugPrint('[_loadProfile] outro usuário entrou — limpando cache '
+              'de ${anterior.userId}');
+          await OfflineStore.clearWorkData();
+        }
         await OfflineStore.saveProfile(uid, data);
         await OfflineStore.clearSignedOut();
       }
@@ -399,10 +409,19 @@ class AuthProvider extends ChangeNotifier {
         // Sair sem rede falha no servidor, mas localmente tem de valer.
         debugPrint('[signOut] erro no servidor (ignorado): $e');
       }
-      // Sair limpa o cache e os dados de trabalho: o próximo usuário deste
-      // aparelho não pode herdar perfil nem fila de envio de outro.
-      await OfflineStore.clearProfile();
-      await OfflineStore.clearWorkData();
+      // O cache NÃO é apagado aqui.
+      //
+      // Apagar tornava "Continuar offline" impossível justamente depois de
+      // sair, que é quando o botão é necessário: entrarOfflineManualmente()
+      // caía em "Nenhum perfil salvo neste aparelho". Anunciar uma ação que
+      // não funciona é pior que manter o dado no aparelho.
+      //
+      // A segurança continua: markSignedOut() acima bloqueia a ENTRADA
+      // AUTOMÁTICA, então reabrir o app cai no login. Só um toque explícito
+      // em "Continuar offline" usa o cache.
+      //
+      // A limpeza acontece quando OUTRO usuário entra com senha neste
+      // aparelho — ver _loadProfile().
       _profile = null;
       _offlineMode = false;
       _entradaOfflineManual = false;
