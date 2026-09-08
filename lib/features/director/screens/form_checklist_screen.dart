@@ -29,6 +29,11 @@ class FormChecklistScreen extends StatefulWidget {
 
 class _FormChecklistScreenState extends State<FormChecklistScreen> {
   final _db = Supabase.instance.client;
+
+  /// O setor veio da navegação (aba "Checklists" de um setor)? Então não se
+  /// escolhe setor aqui — repetir a escolha só permitia sair do contexto
+  /// por engano. Na edição o setor é imutável e também não vira campo.
+  bool get _setorDoContexto => !_isEdit && widget.initialSectorId != null;
   final _formKey = GlobalKey<FormState>();
   final _tituloCtrl = TextEditingController();
 
@@ -372,8 +377,36 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
     final fmt = DateFormat('dd/MM/yyyy');
 
     return Scaffold(
-      appBar:
-          AppBar(title: Text(_isEdit ? 'Editar Checklist' : 'Novo Checklist')),
+      appBar: AppBar(
+        title: Text(_isEdit ? 'Editar Checklist' : 'Novo Checklist'),
+        // Setor definido pela navegação vira subtítulo, não campo editável.
+        bottom: (_setorDoContexto || _isEdit) && _setorSelecionado != null
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(28),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.domain_outlined,
+                            size: 14, color: AppColors.textSecondary),
+                        const SizedBox(width: 5),
+                        Text(
+                          _setorSelecionado!.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            : null,
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -389,20 +422,22 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
                   : null,
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<Sector>(
-              key: ValueKey(_setorSelecionado),
-              decoration: const InputDecoration(labelText: 'Setor *'),
-              initialValue: _setorSelecionado,
-              items: _setores
-                  .map((s) =>
-                      DropdownMenuItem(value: s, child: Text(s.name)))
-                  .toList(),
-              onChanged: _isEdit
-                  ? null
-                  : (v) => setState(() => _setorSelecionado = v),
-              validator: (v) => v == null ? 'Campo obrigatório' : null,
-            ),
-            const SizedBox(height: 16),
+            // Só aparece quando a navegação NÃO definiu o setor. Na edição
+            // o setor é imutável e já está no cabeçalho, então um dropdown
+            // desabilitado seria só ruído.
+            if (!_setorDoContexto && !_isEdit) ...[
+              DropdownButtonFormField<Sector>(
+                key: ValueKey(_setorSelecionado),
+                decoration: const InputDecoration(labelText: 'Setor *'),
+                initialValue: _setorSelecionado,
+                items: _setores
+                    .map((s) => DropdownMenuItem(value: s, child: Text(s.name)))
+                    .toList(),
+                onChanged: (v) => setState(() => _setorSelecionado = v),
+                validator: (v) => v == null ? 'Campo obrigatório' : null,
+              ),
+              const SizedBox(height: 16),
+            ],
             DropdownButtonFormField<String>(
               key: ValueKey(_frequencia),
               decoration: const InputDecoration(labelText: 'Frequência *'),

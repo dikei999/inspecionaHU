@@ -511,10 +511,9 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                   decoration:
                       const InputDecoration(labelText: 'Frequência *'),
                   initialValue: _frequencia,
-                  items: const ['daily', 'weekly', 'biweekly', 'monthly', 'custom']
+                  items: AppConstants.checklistFrequencies
                       .map((f) => DropdownMenuItem(
-                          value: f,
-                          child: Text(AppConstants.frequencyLabel(f))))
+                          value: f['value']!, child: Text(f['label']!)))
                       .toList(),
                   onChanged: (v) =>
                       setState(() => _frequencia = v ?? 'weekly'),
