@@ -10,6 +10,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Localizacao pt_BR dos widgets do Material (date picker, calendario).
+  # Vem do proprio SDK do Flutter — nao e dependencia de terceiros.
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.8
 
   # Supabase — banco, auth e storage

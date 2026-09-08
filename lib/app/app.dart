@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../core/services/notification_service.dart';
@@ -405,6 +406,16 @@ class _AppState extends State<App> {
         theme: AppTheme.lightTheme,
         routerConfig: _router,
         debugShowCheckedModeBanner: false,
+        // Interface em portugues do Brasil: sem isso os widgets do Material
+        // (date picker, cabecalho de calendario, tooltips) saem em ingles,
+        // mesmo com o intl ja formatando as datas em pt_BR.
+        locale: const Locale('pt', 'BR'),
+        supportedLocales: const [Locale('pt', 'BR')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         // Faixa global de status de conexao (6.5): some por completo
         // quando esta online e sem pendencia, deixando o fluxo online
         // exatamente como era.
