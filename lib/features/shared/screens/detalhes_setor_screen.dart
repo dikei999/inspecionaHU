@@ -325,7 +325,12 @@ class _DetalhesSetorScreenState extends State<DetalhesSetorScreen>
           ),
           _ChecklistsTab(sectorId: sector.id, canEdit: _canEdit),
           _TarefasTab(sectorId: sector.id, canEdit: _canEdit),
-          _EquipeTab(sector: sector, owner: _owner, canEdit: _canEdit),
+          _EquipeTab(
+            sector: sector,
+            owner: _owner,
+            canEdit: _canEdit,
+            onOwnerChanged: _load,
+          ),
           _HistoricoTab(sectorId: sector.id),
         ],
       ),
@@ -1246,10 +1251,15 @@ class _EquipeTab extends StatefulWidget {
   final Profile? owner;
   final bool canEdit;
 
+  /// Chamado quando o Supervisor responsável muda — o pai recarrega para o
+  /// cabeçalho e a aba Info refletirem o novo dono.
+  final Future<void> Function() onOwnerChanged;
+
   const _EquipeTab({
     required this.sector,
     required this.owner,
     required this.canEdit,
+    required this.onOwnerChanged,
   });
 
   @override
@@ -1305,6 +1315,121 @@ class _EquipeTabState extends State<_EquipeTab> {
       content: Text(msg),
       backgroundColor: error ? AppColors.nonCompliant : AppColors.compliant,
     ));
+  }
+
+  /// Só o Diretor define o Supervisor responsável. O Supervisor que já é
+  /// dono não pode transferir a própria responsabilidade.
+  bool get _isDirector =>
+      context.read<AuthProvider>().profile?.role == 'director';
+
+  /// Define, troca ou remove o Supervisor responsável pelo setor.
+  ///
+  /// A policy sectors_director_all é FOR ALL e não restringe
+  /// owner_supervisor_id, então este UPDATE já era permitido — nenhuma
+  /// policy precisou mudar.
+  Future<void> _definirResponsavel() async {
+    final profile = context.read<AuthProvider>().profile;
+    if (profile?.hospitalId == null) return;
+
+    List<Profile> supervisores;
+    try {
+      final rows = await _db
+          .from('profiles')
+          .select()
+          .eq('hospital_id', profile!.hospitalId!)
+          .eq('role', 'supervisor')
+          .eq('status', 'active')
+          .order('full_name', ascending: true);
+      supervisores = (rows as List).map((e) => Profile.fromJson(e)).toList();
+    } catch (_) {
+      _showSnack('Erro ao carregar Supervisores.', error: true);
+      return;
+    }
+
+    if (!mounted) return;
+
+    var selecionado = widget.sector.ownerSupervisorId;
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Supervisor responsável'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: supervisores.isEmpty
+                ? const Text(
+                    'Nenhum Supervisor ativo neste hospital. Convide um pela '
+                    'tela de Equipe antes de definir o responsável.')
+                : RadioGroup<String?>(
+                    groupValue: selecionado,
+                    onChanged: (v) => setDialogState(() => selecionado = v),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        const RadioListTile<String?>(
+                          value: null,
+                          title: Text('Sem responsável'),
+                          subtitle: Text('Gerenciado direto pelo Diretor'),
+                        ),
+                        const Divider(height: 1),
+                        ...supervisores.map((sup) => RadioListTile<String?>(
+                              value: sup.id,
+                              title: Text(sup.fullName),
+                              subtitle: Text(sup.email),
+                            )),
+                      ],
+                    ),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            if (supervisores.isNotEmpty)
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Salvar'),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmou != true || !mounted) return;
+    if (selecionado == widget.sector.ownerSupervisorId) return;
+
+    try {
+      await _db
+          .from('sectors')
+          .update({'owner_supervisor_id': selecionado})
+          .eq('id', widget.sector.id);
+
+      await AuditService.log(
+        userId: profile.id,
+        hospitalId: profile.hospitalId,
+        action: selecionado == null
+            ? 'remover_supervisor_setor'
+            : 'definir_supervisor_setor',
+        entityType: 'sector',
+        entityId: widget.sector.id,
+        details: {
+          'sector_name': widget.sector.name,
+          'owner_anterior': widget.sector.ownerSupervisorId,
+          'owner_novo': selecionado,
+        },
+      );
+
+      if (!mounted) return;
+      _showSnack(selecionado == null
+          ? 'Supervisor responsável removido.'
+          : 'Supervisor responsável atualizado.');
+      await widget.onOwnerChanged();
+    } on PostgrestException catch (e) {
+      _showSnack('Erro ao salvar: ${e.message}', error: true);
+    } catch (_) {
+      _showSnack('Erro ao definir o responsável.', error: true);
+    }
   }
 
   /// Dialog de vínculo: lista os Inspetores do hospital e marca os que já
@@ -1480,6 +1605,15 @@ class _EquipeTabState extends State<_EquipeTab> {
                           widget.owner?.fullName ?? 'Sem Supervisor vinculado'),
                       subtitle: Text(widget.owner?.email ??
                           'Setor gerenciado diretamente pelo Diretor'),
+                      // Definir/trocar/remover: exclusivo do Diretor.
+                      trailing: _isDirector
+                          ? TextButton(
+                              onPressed: _definirResponsavel,
+                              child: Text(widget.owner == null
+                                  ? 'Definir'
+                                  : 'Alterar'),
+                            )
+                          : null,
                     ),
                   ),
                   const SizedBox(height: 20),
