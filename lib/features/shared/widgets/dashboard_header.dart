@@ -117,23 +117,51 @@ class HeaderMetric extends StatelessWidget {
   final String value;
   final String label;
 
-  const HeaderMetric({super.key, required this.value, required this.label});
+  /// Marca a métrica como pendência que exige atenção: acrescenta um ponto
+  /// ao lado do número (bloco 4). Usado nas tarefas atrasadas do Inspetor.
+  /// O ponto usa a cor de não conformidade que já existe na paleta.
+  final bool alert;
+
+  const HeaderMetric({
+    super.key,
+    required this.value,
+    required this.label,
+    this.alert = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontFamily: 'Sora',
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-            height: 1.1,
-            letterSpacing: -0.5,
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                fontFamily: 'Sora',
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                height: 1.1,
+                letterSpacing: -0.5,
+              ),
+            ),
+            if (alert) ...[
+              const SizedBox(width: 5),
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: AppColors.nonCompliant,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 2),
         Text(

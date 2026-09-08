@@ -10,6 +10,8 @@ import '../../../core/models/hospital.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/services/audit_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/empty_state.dart';
+import '../../../widgets/skeleton_loader.dart';
 
 class HospitaisScreen extends StatefulWidget {
   const HospitaisScreen({super.key});
@@ -236,11 +238,16 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
         icon: const Icon(Icons.add),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(itemHeight: 88)
           : RefreshIndicator(
               onRefresh: _load,
               child: _items.isEmpty
-                  ? const Center(child: Text('Nenhum hospital cadastrado.'))
+                  ? const EmptyState(
+                      icon: Icons.local_hospital_outlined,
+                      title: 'Nenhum hospital cadastrado',
+                      subtitle: 'Cadastre um hospital para depois vincular o '
+                          'Diretor responsável.',
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.all(AppDimensions.screenPadding),
                       itemCount: _items.length,

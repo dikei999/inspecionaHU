@@ -173,6 +173,8 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                         child: HeaderMetric(
                           value: _overdueCount.toString(),
                           label: 'Atrasadas',
+                          // Pendência que exige atenção ganha marcador.
+                          alert: _overdueCount > 0,
                         ),
                       ),
                     ],

@@ -14,6 +14,8 @@ import '../../shared/screens/convites_enviados_screen.dart';
 import 'acesso_compartilhado_screen.dart';
 import 'pedidos_acesso_screen.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../widgets/empty_state.dart';
+import '../../../widgets/skeleton_loader.dart';
 
 class GestaoEquipeScreen extends StatefulWidget {
   const GestaoEquipeScreen({super.key});
@@ -407,7 +409,7 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
         label: const Text('Convidar usuário'),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(itemHeight: 84)
           : TabBarView(
               controller: _tab,
               children: [
@@ -502,7 +504,12 @@ class _UserList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (users.isEmpty) {
-      return Center(child: Text(emptyMsg));
+      return EmptyState(
+        icon: Icons.groups_outlined,
+        title: emptyMsg,
+        subtitle: 'Use "Convidar usuário" para trazer alguém para a equipe. '
+            'O vínculo é feito pelo código de perfil.',
+      );
     }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(

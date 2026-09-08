@@ -9,6 +9,8 @@ import '../../../core/models/profile.dart';
 import '../../../core/models/sector.dart';
 import '../../../core/services/audit_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/empty_state.dart';
+import '../../../widgets/skeleton_loader.dart';
 
 class GestaoSetoresScreen extends StatefulWidget {
   const GestaoSetoresScreen({super.key});
@@ -206,11 +208,16 @@ class _GestaoSetoresScreenState extends State<GestaoSetoresScreen> {
         icon: const Icon(Icons.add),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(itemHeight: 76)
           : RefreshIndicator(
               onRefresh: _load,
               child: _items.isEmpty
-                  ? const Center(child: Text('Nenhum setor cadastrado.'))
+                  ? const EmptyState(
+                      icon: Icons.domain_outlined,
+                      title: 'Nenhum setor cadastrado',
+                      subtitle: 'Crie o primeiro setor para começar a montar '
+                          'checklists e atribuir tarefas.',
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.all(AppDimensions.screenPadding),
                       itemCount: _items.length,

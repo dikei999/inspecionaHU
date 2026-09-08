@@ -9,6 +9,8 @@ import '../../../core/models/profile.dart';
 import '../../../core/services/audit_service.dart';
 import '../../../core/utils/cpf_utils.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/empty_state.dart';
+import '../../../widgets/skeleton_loader.dart';
 
 class GestaoUsuariosScreen extends StatefulWidget {
   const GestaoUsuariosScreen({super.key});
@@ -312,11 +314,16 @@ class _GestaoUsuariosScreenState extends State<GestaoUsuariosScreen> {
           // ── Lista ──────────────────────────────────────────────────────
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const SkeletonList(itemHeight: 88)
                 : RefreshIndicator(
                     onRefresh: _load,
                     child: _filtered.isEmpty
-                        ? const Center(child: Text('Nenhum usuário encontrado.'))
+                        ? const EmptyState(
+                          icon: Icons.person_search_outlined,
+                          title: 'Nenhum usuário encontrado',
+                          subtitle: 'Ajuste a busca ou o filtro de perfil '
+                              'para ver outros usuários.',
+                        )
                         : ListView.builder(
                             padding: const EdgeInsets.all(
                                 AppDimensions.screenPadding),

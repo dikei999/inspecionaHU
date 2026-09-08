@@ -20,6 +20,7 @@ import '../../../core/services/audit_service.dart';
 import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/nr32_clause_chip.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 /// Estado de persistência de uma resposta individual.
 enum SaveState { idle, saving, saved, error }
@@ -165,7 +166,8 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       if (_task!.status == 'pending') {
         await _db
             .from('tasks')
-            .update({'status': 'in_progress'}).eq('id', widget.taskId);
+            .update({'status': 'in_progress'})
+            .eq('id', widget.taskId);
       }
 
       // Inicializa _ItemState para itens sem resposta
@@ -189,16 +191,20 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     final profile = context.read<AuthProvider>().profile!;
     final now = DateTime.now().toIso8601String();
 
-    final result = await _db.from('inspections').insert({
-      'task_id': _task!.id,
-      'checklist_id': _task!.checklistId,
-      'sector_id': _task!.sectorId,
-      'hospital_id': _task!.hospitalId,
-      'inspector_id': profile.id,
-      'overall_status': 'draft',
-      'started_at': now,
-      'created_at': now,
-    }).select().single();
+    final result = await _db
+        .from('inspections')
+        .insert({
+          'task_id': _task!.id,
+          'checklist_id': _task!.checklistId,
+          'sector_id': _task!.sectorId,
+          'hospital_id': _task!.hospitalId,
+          'inspector_id': profile.id,
+          'overall_status': 'draft',
+          'started_at': now,
+          'created_at': now,
+        })
+        .select()
+        .single();
 
     _inspection = Inspection.fromJson(result);
   }
@@ -252,10 +258,9 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     var anySynced = false;
     for (final payload in toSync) {
       try {
-        await _db.from('inspection_responses').upsert(
-          payload,
-          onConflict: 'inspection_id,checklist_item_id',
-        );
+        await _db
+            .from('inspection_responses')
+            .upsert(payload, onConflict: 'inspection_id,checklist_item_id');
         anySynced = true;
         final state = _responses[payload['checklist_item_id']];
         if (state != null) state.saveState = SaveState.saved;
@@ -267,10 +272,12 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     if (mounted) {
       setState(() {});
       if (anySynced) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Dados sincronizados com sucesso.'),
-          backgroundColor: AppColors.compliant,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Dados sincronizados com sucesso.'),
+            backgroundColor: AppColors.compliant,
+          ),
+        );
       }
     }
   }
@@ -297,8 +304,9 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       'inspection_id': _inspection!.id,
       'checklist_item_id': itemId,
       'status': state.status,
-      'observation':
-          state.observation.trim().isEmpty ? null : state.observation.trim(),
+      'observation': state.observation.trim().isEmpty
+          ? null
+          : state.observation.trim(),
       'photo_url': state.photoUrl,
       'photo_captured_at': state.photoCapturedAt?.toIso8601String(),
       'photo_size_kb': state.photoSizeKb,
@@ -308,7 +316,8 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     if (!_isOnline) {
       // Sem rede: enfileira para sync ao reconectar (banner já avisa o usuário)
       _pendingSync.removeWhere(
-          (p) => p['checklist_item_id'] == itemId); // mantém só o mais recente
+        (p) => p['checklist_item_id'] == itemId,
+      ); // mantém só o mais recente
       _pendingSync.add(payload);
       if (mounted) setState(() => state.saveState = SaveState.error);
       return;
@@ -317,17 +326,19 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     // Retry com backoff: 3 tentativas (0.8s, 1.6s entre elas)
     for (var attempt = 1; attempt <= _maxSaveAttempts; attempt++) {
       try {
-        await _db.from('inspection_responses').upsert(
-          payload,
-          onConflict: 'inspection_id,checklist_item_id',
-        );
+        await _db
+            .from('inspection_responses')
+            .upsert(payload, onConflict: 'inspection_id,checklist_item_id');
         if (mounted) setState(() => state.saveState = SaveState.saved);
         return;
       } catch (e) {
         debugPrint(
-            '[RespostaChecklist] _saveResponse tentativa $attempt falhou: $e');
+          '[RespostaChecklist] _saveResponse tentativa $attempt falhou: $e',
+        );
         if (attempt < _maxSaveAttempts) {
-          await Future.delayed(Duration(milliseconds: 800 * (1 << (attempt - 1))));
+          await Future.delayed(
+            Duration(milliseconds: 800 * (1 << (attempt - 1))),
+          );
           if (!mounted) return;
         }
       }
@@ -343,6 +354,33 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
   void _retrySave(String itemId) {
     _pendingSync.removeWhere((p) => p['checklist_item_id'] == itemId);
     _saveResponse(itemId);
+  }
+
+  // ── Saida com pendencia (bloco 4) ─────────────────────────────────────────
+
+  /// Ha resposta ainda nao confirmada pelo servidor? Cobre os tres casos:
+  /// salvamento em voo, item que falhou e fila offline.
+  bool get _temPendencia =>
+      _savingCount > 0 || _errorCount > 0 || _pendingSync.isNotEmpty;
+
+  /// Confirma a saida quando ha resposta nao salva. Retorna true para sair.
+  Future<bool> _confirmarSaida() async {
+    if (!_temPendencia) return true;
+
+    final pendentes = _savingCount + _errorCount + _pendingSync.length;
+    return confirmAction(
+      context,
+      title: 'Sair com respostas não salvas?',
+      message: _isOnline
+          ? '$pendentes resposta(s) ainda não foram confirmadas pelo '
+                'servidor. Se sair agora, elas podem se perder.'
+          : '$pendentes resposta(s) estão na fila aguardando conexão. '
+                'Elas ficam salvas neste aparelho e são enviadas quando a '
+                'internet voltar.',
+      confirmLabel: 'Sair mesmo assim',
+      cancelLabel: 'Continuar aqui',
+      icon: Icons.warning_amber_rounded,
+    );
   }
 
   // ── Status global de salvamento (para a barra de progresso) ────────────────
@@ -384,7 +422,9 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       if (compressed == null) {
         if (mounted) {
           setState(() => state.uploading = false);
-          _showPhotoError('Não foi possível processar a foto. Tente novamente.');
+          _showPhotoError(
+            'Não foi possível processar a foto. Tente novamente.',
+          );
         }
         return;
       }
@@ -403,8 +443,7 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
 
       // Upload para Storage
       final fileName = '${_uuid.v4()}.jpg';
-      final storagePath =
-          '${_task!.hospitalId}/${_inspection!.id}/$fileName';
+      final storagePath = '${_task!.hospitalId}/${_inspection!.id}/$fileName';
 
       await _db.storage
           .from('inspection-photos')
@@ -437,7 +476,8 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
           }
         });
         _showPhotoError(
-            'A foto NÃO foi salva. Verifique a conexão e tire novamente.');
+          'A foto NÃO foi salva. Verifique a conexão e tire novamente.',
+        );
       }
     }
   }
@@ -448,22 +488,24 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
+      ..showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text(message)),
+            ],
+          ),
+          backgroundColor: AppColors.nonCompliant,
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'OK',
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
         ),
-        backgroundColor: AppColors.nonCompliant,
-        duration: const Duration(seconds: 8),
-        action: SnackBarAction(
-          label: 'OK',
-          textColor: Colors.white,
-          onPressed: () {},
-        ),
-      ));
+      );
   }
 
   // ── Validação e envio ──────────────────────────────────────────────────────
@@ -477,30 +519,39 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       final state = _responses[item.id];
       if (state?.status == null) {
         _scrollToItem(i);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Item ${i + 1} não foi respondido. Responda todos os itens antes de enviar.'),
-          backgroundColor: AppColors.nonCompliant,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Item ${i + 1} não foi respondido. Responda todos os itens antes de enviar.',
+            ),
+            backgroundColor: AppColors.nonCompliant,
+          ),
+        );
         return;
       }
       if (state!.status == 'NC') {
         if (state.observation.trim().isEmpty) {
           _scrollToItem(i);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                'Item ${i + 1} (NC): ${AppStrings.errorNcRequiresObservation}'),
-            backgroundColor: AppColors.nonCompliant,
-          ));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Item ${i + 1} (NC): ${AppStrings.errorNcRequiresObservation}',
+              ),
+              backgroundColor: AppColors.nonCompliant,
+            ),
+          );
           return;
         }
         if (item.requiresPhoto && state.photoUrl == null) {
           _scrollToItem(i);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text('Item ${i + 1} (NC): ${AppStrings.errorNcRequiresPhoto}'),
-            backgroundColor: AppColors.nonCompliant,
-          ));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Item ${i + 1} (NC): ${AppStrings.errorNcRequiresPhoto}',
+              ),
+              backgroundColor: AppColors.nonCompliant,
+            ),
+          );
           return;
         }
       }
@@ -512,14 +563,17 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Finalizar e enviar?'),
         content: const Text(
-            'Após o envio, a inspeção não poderá ser editada. Deseja continuar?'),
+          'Após o envio, a inspeção não poderá ser editada. Deseja continuar?',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Enviar')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Enviar'),
+          ),
         ],
       ),
     );
@@ -543,16 +597,20 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       final rate = total > 0 ? (compliant / total * 100) : 0.0;
 
       // UPDATE inspection
-      await _db.from('inspections').update({
-        'overall_status': 'submitted',
-        'submitted_at': now,
-        'finished_at': now,
-      }).eq('id', _inspection!.id);
+      await _db
+          .from('inspections')
+          .update({
+            'overall_status': 'submitted',
+            'submitted_at': now,
+            'finished_at': now,
+          })
+          .eq('id', _inspection!.id);
 
       // UPDATE task
       await _db
           .from('tasks')
-          .update({'status': 'submitted'}).eq('id', widget.taskId);
+          .update({'status': 'submitted'})
+          .eq('id', widget.taskId);
 
       // INSERT / UPSERT report
       await _db.from('reports').upsert({
@@ -583,20 +641,24 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Inspeção enviada com sucesso!'),
-          backgroundColor: AppColors.compliant,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Inspeção enviada com sucesso!'),
+            backgroundColor: AppColors.compliant,
+          ),
+        );
         Navigator.of(context).pop(true); // volta para quadro de tarefas
       }
     } catch (e) {
       debugPrint('[RespostaChecklist] _submit erro: $e');
       if (mounted) {
         setState(() => _submitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erro ao enviar inspeção: $e'),
-          backgroundColor: AppColors.nonCompliant,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao enviar inspeção: $e'),
+            backgroundColor: AppColors.nonCompliant,
+          ),
+        );
       }
     }
   }
@@ -605,10 +667,12 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     final key = _itemKeys[index];
     final ctx = key.currentContext;
     if (ctx != null) {
-      Scrollable.ensureVisible(ctx,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOut,
-          alignment: 0.1);
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+        alignment: 0.1,
+      );
     }
   }
 
@@ -639,15 +703,22 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline,
-                    color: AppColors.nonCompliant, size: 48),
+                const Icon(
+                  Icons.error_outline,
+                  color: AppColors.nonCompliant,
+                  size: 48,
+                ),
                 const SizedBox(height: 16),
-                Text(_initError!,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium),
+                Text(
+                  _initError!,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
                 const SizedBox(height: 24),
                 ElevatedButton(
-                    onPressed: _init, child: const Text('Tentar novamente')),
+                  onPressed: _init,
+                  child: const Text('Tentar novamente'),
+                ),
               ],
             ),
           ),
@@ -657,170 +728,205 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
 
     final isLocked = _inspection?.isLocked ?? false;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_checklist?.title ?? 'Checklist'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Salvar e sair'),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // ── Banner offline ────────────────────────────────────────────
-          if (!_isOnline)
-            Container(
-              width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              color: AppColors.pending100,
-              child: Row(
-                children: [
-                  const Icon(Icons.wifi_off,
-                      color: AppColors.pending, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Sem conexão — respostas serão sincronizadas ao reconectar',
+    // Sair com resposta ainda nao gravada no servidor pede confirmacao
+    // (bloco 4). PopScope cobre o gesto de voltar do sistema; o botao
+    // "Salvar e sair" passa pela mesma checagem.
+    return PopScope(
+      canPop: !_temPendencia,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmarSaida() && mounted) {
+          if (context.mounted) Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_checklist?.title ?? 'Checklist'),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                if (await _confirmarSaida() && context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('Salvar e sair'),
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            // ── Banner offline ────────────────────────────────────────────
+            if (!_isOnline)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                color: AppColors.pending100,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.wifi_off,
+                      color: AppColors.pending,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Sem conexão — respostas serão sincronizadas ao reconectar',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.pending,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // ── Banner validado (bloqueado) ───────────────────────────────
+            if (isLocked)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                color: AppColors.compliant100,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.verified,
+                      color: AppColors.compliant,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Inspeção validada — somente leitura',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.pending,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        color: AppColors.compliant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // ── Barra de progresso rica ───────────────────────────────────
+            _ProgressBar(
+              answered: _answeredCount,
+              total: _items.length,
+              compliant: _responses.values.where((s) => s.status == 'C').length,
+              nonCompliant: _responses.values
+                  .where((s) => s.status == 'NC')
+                  .length,
+              notApplicable: _responses.values
+                  .where((s) => s.status == 'NA')
+                  .length,
+              savingCount: _savingCount,
+              errorCount: _errorCount,
+            ),
+
+            // ── Itens do checklist ────────────────────────────────────────
+            Expanded(
+              child: ListView.separated(
+                controller: _scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                itemCount: _items.length,
+                separatorBuilder: (_, i) => const SizedBox(height: 12),
+                itemBuilder: (ctx, i) {
+                  final item = _items[i];
+                  final state = _responses.putIfAbsent(
+                    item.id,
+                    () => _ItemState(),
+                  );
+                  return _ChecklistItemCard(
+                    key: _itemKeys[i],
+                    item: item,
+                    index: i,
+                    state: state,
+                    locked: isLocked,
+                    onStatusChanged: (s) {
+                      setState(() {
+                        state.status = s;
+                        // Ao sair de NC, limpa a observação (que era obrigatória
+                        // por causa da NC). O Inspetor ainda pode digitar uma
+                        // observação opcional em C/NA. A foto é mantida.
+                        if (s != 'NC') {
+                          state.observation = '';
+                        }
+                      });
+                      _saveResponse(item.id);
+                    },
+                    onObservationChanged: (obs) {
+                      state.observation = obs;
+                      _scheduleObservationSave(item.id);
+                    },
+                    onTakePhoto: () => _takePhoto(item.id),
+                    onRetrySave: () => _retrySave(item.id),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+
+        // ── Botão finalizar ───────────────────────────────────────────────
+        bottomNavigationBar: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            border: Border(
+              top: BorderSide(color: AppColors.border, width: 0.5),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Progresso textual
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '$_answeredCount de ${_items.length} respondidos',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  Text(
+                    _allAnswered
+                        ? 'Pronto para enviar'
+                        : 'Responda todos os itens',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _allAnswered
+                          ? AppColors.compliant
+                          : AppColors.textSecondary,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
-            ),
-
-          // ── Banner validado (bloqueado) ───────────────────────────────
-          if (isLocked)
-            Container(
-              width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              color: AppColors.compliant100,
-              child: Row(
-                children: [
-                  const Icon(Icons.verified,
-                      color: AppColors.compliant, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Inspeção validada — somente leitura',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppColors.compliant,
-                          fontWeight: FontWeight.w500,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-
-          // ── Barra de progresso rica ───────────────────────────────────
-          _ProgressBar(
-            answered: _answeredCount,
-            total: _items.length,
-            compliant:
-                _responses.values.where((s) => s.status == 'C').length,
-            nonCompliant:
-                _responses.values.where((s) => s.status == 'NC').length,
-            notApplicable:
-                _responses.values.where((s) => s.status == 'NA').length,
-            savingCount: _savingCount,
-            errorCount: _errorCount,
-          ),
-
-          // ── Itens do checklist ────────────────────────────────────────
-          Expanded(
-            child: ListView.separated(
-              controller: _scrollCtrl,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-              itemCount: _items.length,
-              separatorBuilder: (_, i) => const SizedBox(height: 12),
-              itemBuilder: (ctx, i) {
-                final item = _items[i];
-                final state =
-                    _responses.putIfAbsent(item.id, () => _ItemState());
-                return _ChecklistItemCard(
-                  key: _itemKeys[i],
-                  item: item,
-                  index: i,
-                  state: state,
-                  locked: isLocked,
-                  onStatusChanged: (s) {
-                    setState(() {
-                      state.status = s;
-                      // Ao sair de NC, limpa a observação (que era obrigatória
-                      // por causa da NC). O Inspetor ainda pode digitar uma
-                      // observação opcional em C/NA. A foto é mantida.
-                      if (s != 'NC') {
-                        state.observation = '';
-                      }
-                    });
-                    _saveResponse(item.id);
-                  },
-                  onObservationChanged: (obs) {
-                    state.observation = obs;
-                    _scheduleObservationSave(item.id);
-                  },
-                  onTakePhoto: () => _takePhoto(item.id),
-                  onRetrySave: () => _retrySave(item.id),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-
-      // ── Botão finalizar ───────────────────────────────────────────────
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          border:
-              Border(top: BorderSide(color: AppColors.border, width: 0.5)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Progresso textual
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '$_answeredCount de ${_items.length} respondidos',
-                  style: Theme.of(context).textTheme.bodySmall,
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: (_allAnswered && !isLocked && !_submitting)
+                      ? _submit
+                      : null,
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Finalizar e enviar'),
                 ),
-                Text(
-                  _allAnswered ? 'Pronto para enviar' : 'Responda todos os itens',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: _allAnswered
-                            ? AppColors.compliant
-                            : AppColors.textSecondary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed:
-                    (_allAnswered && !isLocked && !_submitting) ? _submit : null,
-                child: _submitting
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Finalizar e enviar'),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -855,41 +961,59 @@ class _ProgressBar extends StatelessWidget {
     // Status global do auto-save
     final Widget saveStatus;
     if (savingCount > 0) {
-      saveStatus = Row(mainAxisSize: MainAxisSize.min, children: [
-        const SizedBox(
-          width: 10,
-          height: 10,
-          child: CircularProgressIndicator(strokeWidth: 1.5),
-        ),
-        const SizedBox(width: 5),
-        Text('Salvando…',
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: AppColors.primary)),
-      ]);
+      saveStatus = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 10,
+            height: 10,
+            child: CircularProgressIndicator(strokeWidth: 1.5),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            'Salvando…',
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: AppColors.primary),
+          ),
+        ],
+      );
     } else if (errorCount > 0) {
-      saveStatus = Row(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.cloud_off_outlined,
-            size: 12, color: AppColors.nonCompliant),
-        const SizedBox(width: 4),
-        Text('$errorCount não salvo(s)',
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: AppColors.nonCompliant)),
-      ]);
+      saveStatus = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.cloud_off_outlined,
+            size: 12,
+            color: AppColors.nonCompliant,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$errorCount não salvo(s)',
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: AppColors.nonCompliant),
+          ),
+        ],
+      );
     } else if (answered > 0) {
-      saveStatus = Row(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.cloud_done_outlined,
-            size: 12, color: AppColors.compliant),
-        const SizedBox(width: 4),
-        Text('Tudo salvo',
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: AppColors.compliant)),
-      ]);
+      saveStatus = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.cloud_done_outlined,
+            size: 12,
+            color: AppColors.compliant,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Tudo salvo',
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: AppColors.compliant),
+          ),
+        ],
+      );
     } else {
       saveStatus = const SizedBox.shrink();
     }
@@ -905,17 +1029,21 @@ class _ProgressBar extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text('Progresso',
-                      style: Theme.of(context).textTheme.labelSmall),
+                  Text(
+                    'Progresso',
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
                   const SizedBox(width: 8),
                   saveStatus,
                 ],
               ),
-              Text('${(progress * 100).toStringAsFixed(0)}%',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                      )),
+              Text(
+                '${(progress * 100).toStringAsFixed(0)}%',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -929,8 +1057,9 @@ class _ProgressBar extends StatelessWidget {
                 value: value,
                 minHeight: 7,
                 backgroundColor: AppColors.border,
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  AppColors.primary,
+                ),
               ),
             ),
           ),
@@ -939,17 +1068,22 @@ class _ProgressBar extends StatelessWidget {
             Row(
               children: [
                 _CountPill(
-                    label: 'C', count: compliant, color: AppColors.compliant),
+                  label: 'C',
+                  count: compliant,
+                  color: AppColors.compliant,
+                ),
                 const SizedBox(width: 6),
                 _CountPill(
-                    label: 'NC',
-                    count: nonCompliant,
-                    color: AppColors.nonCompliant),
+                  label: 'NC',
+                  count: nonCompliant,
+                  color: AppColors.nonCompliant,
+                ),
                 const SizedBox(width: 6),
                 _CountPill(
-                    label: 'NA',
-                    count: notApplicable,
-                    color: AppColors.textSecondary),
+                  label: 'NA',
+                  count: notApplicable,
+                  color: AppColors.textSecondary,
+                ),
               ],
             ),
           ],
@@ -964,8 +1098,11 @@ class _CountPill extends StatelessWidget {
   final int count;
   final Color color;
 
-  const _CountPill(
-      {required this.label, required this.count, required this.color});
+  const _CountPill({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1082,8 +1219,10 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
             if (_isCriticalNc) ...[
               Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.nonCompliant,
                   borderRadius: BorderRadius.circular(8),
@@ -1091,8 +1230,11 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.report_gmailerrorred,
-                        color: Colors.white, size: 15),
+                    Icon(
+                      Icons.report_gmailerrorred,
+                      color: Colors.white,
+                      size: 15,
+                    ),
                     SizedBox(width: 6),
                     Text(
                       'NÃO CONFORMIDADE CRÍTICA',
@@ -1142,7 +1284,9 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
                           if (item.isCritical) ...[
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.nonCompliant100,
                                 borderRadius: BorderRadius.circular(4),
@@ -1173,9 +1317,9 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
                       Text(
                         item.description,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.textPrimary,
-                            ),
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ],
                   ),
@@ -1255,8 +1399,7 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
                   decoration: BoxDecoration(
                     color: AppColors.background,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: AppColors.border, width: 0.5),
+                    border: Border.all(color: AppColors.border, width: 0.5),
                   ),
                   child: Text(
                     state.observation,
@@ -1302,8 +1445,11 @@ class _SaveIndicator extends StatelessWidget {
           child: CircularProgressIndicator(strokeWidth: 1.5),
         );
       case SaveState.saved:
-        return const Icon(Icons.cloud_done_outlined,
-            size: 16, color: AppColors.compliant);
+        return const Icon(
+          Icons.cloud_done_outlined,
+          size: 16,
+          color: AppColors.compliant,
+        );
       case SaveState.error:
         return GestureDetector(
           onTap: onRetry,
@@ -1315,8 +1461,11 @@ class _SaveIndicator extends StatelessWidget {
                 color: AppColors.nonCompliant100,
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: const Icon(Icons.sync_problem,
-                  size: 14, color: AppColors.nonCompliant),
+              child: const Icon(
+                Icons.sync_problem,
+                size: 14,
+                color: AppColors.nonCompliant,
+              ),
             ),
           ),
         );
@@ -1372,11 +1521,7 @@ class _StatusButton extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Icon(
-                icon,
-                size: 18,
-                color: selected ? Colors.white : color,
-              ),
+              Icon(icon, size: 18, color: selected ? Colors.white : color),
               const SizedBox(height: 3),
               Text(
                 label,
@@ -1447,17 +1592,20 @@ class _ReadonlyStatus extends StatelessWidget {
             status == 'C'
                 ? Icons.check_circle_outlined
                 : status == 'NC'
-                    ? Icons.cancel_outlined
-                    : Icons.remove_circle_outline,
+                ? Icons.cancel_outlined
+                : Icons.remove_circle_outline,
             color: color,
             size: 18,
           ),
           const SizedBox(width: 6),
-          Text(label,
-              style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13)),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
         ],
       ),
     );
@@ -1481,8 +1629,7 @@ class _PhotoSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasPhoto =
-        state.photoUrl != null || state.photoLocalPath != null;
+    final hasPhoto = state.photoUrl != null || state.photoLocalPath != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1500,17 +1647,20 @@ class _PhotoSection extends StatelessWidget {
             Text(
               requiresPhoto ? 'Foto obrigatória' : 'Foto',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: requiresPhoto
-                        ? AppColors.nonCompliant
-                        : AppColors.textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
+                color: requiresPhoto
+                    ? AppColors.nonCompliant
+                    : AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
             ),
             if (requiresPhoto && !hasPhoto)
               const Padding(
                 padding: EdgeInsets.only(left: 6),
-                child: Icon(Icons.error_outline,
-                    size: 14, color: AppColors.nonCompliant),
+                child: Icon(
+                  Icons.error_outline,
+                  size: 14,
+                  color: AppColors.nonCompliant,
+                ),
               ),
           ],
         ),
@@ -1556,8 +1706,10 @@ class _PhotoSection extends StatelessWidget {
                           height: 160,
                           color: AppColors.background,
                           child: const Center(
-                            child: Icon(Icons.broken_image_outlined,
-                                color: AppColors.textDisabled),
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: AppColors.textDisabled,
+                            ),
                           ),
                         ),
                       ),
@@ -1574,8 +1726,11 @@ class _PhotoSection extends StatelessWidget {
                         color: Colors.black54,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Icon(Icons.camera_alt,
-                          color: Colors.white, size: 16),
+                      child: const Icon(
+                        Icons.camera_alt,
+                        color: Colors.white,
+                        size: 16,
+                      ),
                     ),
                   ),
                 ),
@@ -1584,17 +1739,17 @@ class _PhotoSection extends StatelessWidget {
                   bottom: 8,
                   left: 8,
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
                       AppDateUtils.formatDateTime(state.photoCapturedAt!),
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10),
+                      style: const TextStyle(color: Colors.white, fontSize: 10),
                     ),
                   ),
                 ),
@@ -1621,11 +1776,13 @@ class _PhotoSection extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.camera_alt_outlined,
-                        color: requiresPhoto
-                            ? AppColors.nonCompliant
-                            : AppColors.textSecondary,
-                        size: 24),
+                    Icon(
+                      Icons.camera_alt_outlined,
+                      color: requiresPhoto
+                          ? AppColors.nonCompliant
+                          : AppColors.textSecondary,
+                      size: 24,
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       'Tirar foto',

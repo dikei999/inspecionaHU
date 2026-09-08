@@ -7,6 +7,8 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/checklist_template.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/empty_state.dart';
+import '../../../widgets/skeleton_loader.dart';
 
 class TemplatesLocaisScreen extends StatefulWidget {
   const TemplatesLocaisScreen({super.key});
@@ -69,11 +71,16 @@ class _TemplatesLocaisScreenState extends State<TemplatesLocaisScreen> {
         icon: const Icon(Icons.add),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList(itemHeight: 76)
           : RefreshIndicator(
               onRefresh: _load,
               child: _templates.isEmpty
-                  ? const Center(child: Text('Nenhum template local cadastrado.'))
+                  ? const EmptyState(
+                      icon: Icons.description_outlined,
+                      title: 'Nenhum template local',
+                      subtitle: 'Crie um template para reaproveitar os mesmos '
+                          'itens em vários checklists deste hospital.',
+                    )
                   : ListView.builder(
                       padding:
                           const EdgeInsets.all(AppDimensions.screenPadding),
