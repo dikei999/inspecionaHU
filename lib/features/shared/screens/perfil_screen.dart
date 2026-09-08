@@ -11,6 +11,7 @@ import '../../../core/services/audit_service.dart';
 import '../../../core/utils/cpf_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../core/models/profile.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -21,7 +22,12 @@ class PerfilScreen extends StatefulWidget {
 
 class _PerfilScreenState extends State<PerfilScreen> {
   final _db = Supabase.instance.client;
+  // full_name continua sendo a fonte única no banco; a separação em nome e
+  // sobrenome é só de interface, recomposta na hora de salvar.
   final _nomeCtrl = TextEditingController();
+  final _sobrenomeCtrl = TextEditingController();
+  final _telefoneCtrl = TextEditingController();
+  final _cargoCtrl = TextEditingController();
   final _senhaAtualCtrl = TextEditingController();
   final _novaSenhaCtrl = TextEditingController();
   final _confirmSenhaCtrl = TextEditingController();
@@ -40,13 +46,19 @@ class _PerfilScreenState extends State<PerfilScreen> {
     super.initState();
     final profile = context.read<AuthProvider>().profile;
     if (profile != null) {
-      _nomeCtrl.text = profile.fullName;
+      _nomeCtrl.text = profile.firstName;
+      _sobrenomeCtrl.text = profile.lastName;
+      _telefoneCtrl.text = profile.phone ?? '';
+      _cargoCtrl.text = profile.jobTitle ?? '';
     }
   }
 
   @override
   void dispose() {
     _nomeCtrl.dispose();
+    _sobrenomeCtrl.dispose();
+    _telefoneCtrl.dispose();
+    _cargoCtrl.dispose();
     _senhaAtualCtrl.dispose();
     _novaSenhaCtrl.dispose();
     _confirmSenhaCtrl.dispose();
@@ -54,11 +66,35 @@ class _PerfilScreenState extends State<PerfilScreen> {
   }
 
   Future<void> _pickPhoto() async {
+    // Foto de PERFIL e a unica excecao a regra de camera-only: aqui a
+    // galeria e permitida (CLAUDE.md). As fotos de inspecao seguem
+    // restritas a camera.
+    final origem = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Tirar foto'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Escolher da galeria'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (origem == null || !mounted) return;
+
     setState(() => _uploadingPhoto = true);
     try {
       final picker = ImagePicker();
-      final picked =
-          await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+      final picked = await picker.pickImage(source: origem, imageQuality: 80);
       if (picked == null || !mounted) {
         setState(() => _uploadingPhoto = false);
         return;
@@ -114,8 +150,14 @@ class _PerfilScreenState extends State<PerfilScreen> {
     try {
       final auth = context.read<AuthProvider>();
       final uid = auth.profile!.id;
-      final novoNome = _nomeCtrl.text.trim();
-      final error = await auth.updateProfile(fullName: novoNome);
+      // Nome e sobrenome voltam a ser um full_name só.
+      final novoNome =
+          Profile.joinName(_nomeCtrl.text, _sobrenomeCtrl.text);
+      final error = await auth.updateProfile(
+        fullName: novoNome,
+        phone: _telefoneCtrl.text,
+        jobTitle: _cargoCtrl.text,
+      );
       if (!mounted) return;
       if (error != null) {
         _snack(error, error: true);
@@ -125,12 +167,16 @@ class _PerfilScreenState extends State<PerfilScreen> {
           action: 'atualizar_perfil',
           entityType: 'profile',
           entityId: uid,
-          details: {'full_name': novoNome},
+          details: {
+            'full_name': novoNome,
+            'phone': _telefoneCtrl.text.trim(),
+            'job_title': _cargoCtrl.text.trim(),
+          },
         );
-        _snack('Nome atualizado.');
+        _snack('Dados atualizados.');
       }
     } catch (_) {
-      if (mounted) _snack('Erro ao salvar nome.', error: true);
+      if (mounted) _snack('Erro ao salvar os dados.', error: true);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -259,15 +305,52 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 children: [
                   TextFormField(
                     controller: _nomeCtrl,
-                    maxLength: 200,
+                    maxLength: 100,
                     textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(
-                      labelText: 'Nome completo',
+                      labelText: 'Nome',
                       prefixIcon: Icon(Icons.person_outline),
+                      counterText: '',
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty)
                         ? 'Campo obrigatório'
                         : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _sobrenomeCtrl,
+                    maxLength: 100,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Sobrenome',
+                      prefixIcon: Icon(Icons.person_outline),
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _cargoCtrl,
+                    maxLength: 100,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      labelText: 'Cargo (opcional)',
+                      helperText: 'Função no hospital. Não altera as '
+                          'permissões do sistema.',
+                      helperMaxLines: 2,
+                      prefixIcon: Icon(Icons.work_outline),
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _telefoneCtrl,
+                    maxLength: 20,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Telefone (opcional)',
+                      prefixIcon: Icon(Icons.phone_outlined),
+                      counterText: '',
+                    ),
                   ),
                   const SizedBox(height: 12),
                   _ReadOnlyField(

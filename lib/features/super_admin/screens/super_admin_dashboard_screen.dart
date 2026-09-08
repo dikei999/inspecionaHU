@@ -85,9 +85,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
           children: [
             // ── Header institucional azul ─────────────────────────────
             DashboardHeader(
-              greeting: profile?.fullName != null
-                  ? 'Olá, ${profile!.fullName.split(' ').first}'
-                  : 'Super Admin',
+              greeting: profile != null ? profile.saudacao : 'Super Admin',
               subtitle: 'Administração global · HU Brasil',
               actions: [
                 IconButton(

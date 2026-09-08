@@ -388,6 +388,8 @@ class AuthProvider extends ChangeNotifier {
     String? fullName,
     String? email,
     String? photoUrl,
+    String? phone,
+    String? jobTitle,
   }) async {
     final uid = _supabase.auth.currentUser?.id;
     if (uid == null) return 'Usuário não autenticado.';
@@ -396,6 +398,13 @@ class AuthProvider extends ChangeNotifier {
       if (fullName != null) updates['full_name'] = fullName.trim();
       if (email != null) updates['email'] = email.trim().toLowerCase();
       if (photoUrl != null) updates['photo_url'] = photoUrl;
+      // String vazia limpa o campo; null significa "nao mexer".
+      if (phone != null) {
+        updates['phone'] = phone.trim().isEmpty ? null : phone.trim();
+      }
+      if (jobTitle != null) {
+        updates['job_title'] = jobTitle.trim().isEmpty ? null : jobTitle.trim();
+      }
       if (updates.isEmpty) return null;
       await _supabase.from('profiles').update(updates).eq('id', uid);
       await _loadProfile();

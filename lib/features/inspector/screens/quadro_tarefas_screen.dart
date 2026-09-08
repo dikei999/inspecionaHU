@@ -232,9 +232,7 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
         children: [
           // ── Header institucional azul ─────────────────────────────
           DashboardHeader(
-            greeting: profile?.fullName != null
-                ? 'Olá, ${profile!.fullName.split(' ').first}'
-                : 'Minhas Tarefas',
+            greeting: profile != null ? profile.saudacao : 'Minhas Tarefas',
             subtitle: 'Minhas tarefas de inspeção',
             actions: [
               IconButton(

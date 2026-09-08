@@ -179,9 +179,7 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
           children: [
             // ── Header institucional azul ─────────────────────────────
             DashboardHeader(
-              greeting: profile?.fullName != null
-                  ? 'Olá, ${profile!.fullName.split(' ').first}'
-                  : 'Olá',
+              greeting: profile != null ? profile.saudacao : 'Olá',
               subtitle: _hospitalNome ?? 'Painel do Diretor',
               actions: [
                 const NotificationBell(),
