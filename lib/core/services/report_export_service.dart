@@ -14,6 +14,7 @@ import '../constants/nr32_clauses.dart';
 import '../models/checklist_item.dart';
 import '../models/inspection.dart';
 import '../models/inspection_response.dart';
+import '../constants/app_strings.dart';
 import '../../widgets/hu_brasil_logo.dart';
 
 /// Dados consolidados de um relatório de inspeção para exportação.
@@ -279,7 +280,9 @@ class ReportExportService {
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text('Gerado em $generatedAt pelo InspecionaHU',
+          pw.Text(
+              'Gerado em $generatedAt pelo InspecionaHU · '
+              '${AppStrings.assinaturaInstitucional}',
               style: pw.TextStyle(fontSize: 8, color: _pdfGray)),
           pw.Text('Página ${ctx.pageNumber} de ${ctx.pagesCount}',
               style: pw.TextStyle(fontSize: 8, color: _pdfGray)),

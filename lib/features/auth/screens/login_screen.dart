@@ -6,7 +6,7 @@ import '../../../app/routes.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/config/demo_credentials.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../widgets/app_logo.dart';
+import '../../../core/constants/app_strings.dart';
 import '../../../widgets/hu_brasil_logo.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -51,9 +51,9 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     final error = await context.read<AuthProvider>().signIn(
-          email: email,
-          password: password,
-        );
+      email: email,
+      password: password,
+    );
 
     if (mounted) {
       setState(() {
@@ -73,8 +73,10 @@ class _LoginScreenState extends State<LoginScreen> {
           child: SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 420),
                   child: Form(
@@ -86,14 +88,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         Center(
                           child: Image.asset(
                             'assets/branding/logo_full.png',
-                            height: 116,
+                            height: 76,
                           ),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 10),
                         Center(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 5),
+                              horizontal: 12,
+                              vertical: 5,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.primary50,
                               borderRadius: BorderRadius.circular(20),
@@ -116,24 +120,27 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 8),
                         Center(
                           child: Text(
-                            'Rede EBSERH · Hospitais Universitários',
+                            AppStrings.assinaturaInstitucional,
+                            textAlign: TextAlign.center,
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: 14,
                               color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w400,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
-                        const SizedBox(height: 36),
+                        const SizedBox(height: 16),
 
                         // ── Card do formulário ───────────────────────────
                         Container(
-                          padding: const EdgeInsets.all(24),
+                          padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
                             color: AppColors.surface,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                                color: AppColors.border, width: 0.5),
+                              color: AppColors.border,
+                              width: 0.5,
+                            ),
                             boxShadow: AppShadows.card,
                           ),
                           child: Column(
@@ -143,12 +150,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 'Entrar na conta',
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Acesse com suas credenciais institucionais',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              const SizedBox(height: 20),
+                              const SizedBox(height: 16),
                               TextFormField(
                                 controller: _emailCtrl,
                                 keyboardType: TextInputType.emailAddress,
@@ -159,10 +161,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 validator: (v) =>
                                     (v == null || v.trim().isEmpty)
-                                        ? 'Campo obrigatório'
-                                        : null,
+                                    ? 'Campo obrigatório'
+                                    : null,
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
                               TextFormField(
                                 controller: _passwordCtrl,
                                 obscureText: _obscure,
@@ -172,9 +174,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                   labelText: 'Senha',
                                   prefixIcon: const Icon(Icons.lock_outlined),
                                   suffixIcon: IconButton(
-                                    icon: Icon(_obscure
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined),
+                                    icon: Icon(
+                                      _obscure
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
+                                    ),
                                     onPressed: () =>
                                         setState(() => _obscure = !_obscure),
                                   ),
@@ -193,7 +197,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   style: TextButton.styleFrom(
                                     minimumSize: Size.zero,
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 4, vertical: 8),
+                                      horizontal: 4,
+                                      vertical: 8,
+                                    ),
                                   ),
                                   child: const Text('Esqueci minha senha'),
                                 ),
@@ -208,36 +214,42 @@ class _LoginScreenState extends State<LoginScreen> {
                                     color: AppColors.nonCompliant50,
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                        color: AppColors.nonCompliant
-                                            .withValues(alpha: 0.3)),
+                                      color: AppColors.nonCompliant.withValues(
+                                        alpha: 0.3,
+                                      ),
+                                    ),
                                   ),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.error_outline,
-                                          color: AppColors.nonCompliant,
-                                          size: 18),
+                                      const Icon(
+                                        Icons.error_outline,
+                                        color: AppColors.nonCompliant,
+                                        size: 18,
+                                      ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
                                           _error!,
                                           style: const TextStyle(
-                                              color: AppColors.nonCompliant,
-                                              fontSize: 13),
+                                            color: AppColors.nonCompliant,
+                                            fontSize: 13,
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
                               ],
-                              const SizedBox(height: 20),
+                              const SizedBox(height: 12),
 
                               // ── Botão entrar ──────────────────────────────
                               Container(
                                 height: 48,
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(10),
-                                  boxShadow:
-                                      _loading ? null : AppShadows.primaryGlow,
+                                  boxShadow: _loading
+                                      ? null
+                                      : AppShadows.primaryGlow,
                                 ),
                                 child: ElevatedButton(
                                   onPressed: _loading ? null : _submit,
@@ -246,8 +258,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                           width: 20,
                                           height: 20,
                                           child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Colors.white),
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
                                         )
                                       : const Text('Entrar'),
                                 ),
@@ -256,15 +269,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
 
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 14),
 
                         // ── Modo Demo (ferramenta de desenvolvimento) ────
+                        // Recolhido por padrão: aberto, era ele que fazia a
+                        // tela passar da altura do celular. O bloco continua
+                        // aqui, a um toque de distância.
                         if (AppConfig.showDemoLogin) ...[
                           _DemoLoginCard(
                             loading: _loading,
                             onSelect: _demoLogin,
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 10),
                         ],
 
                         // ── Link criar conta ─────────────────────────────
@@ -282,6 +298,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               onPressed: () => context.push(AppRoutes.cadastro),
                               style: TextButton.styleFrom(
                                 foregroundColor: AppColors.primary,
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 10,
+                                ),
                               ),
                               child: const Text(
                                 'Criar conta',
@@ -293,53 +315,23 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        Center(
-                          child: Text(
-                            'Segurança do trabalho em serviços de saúde',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textDisabled,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ),
 
                         // ── Rodapé institucional ─────────────────────────
                         // Identidade do InspecionaHU ao lado da logo HU
                         // Brasil (bloco 5). A logo some sozinha se o arquivo
                         // não estiver no bundle — a tela não quebra.
-                        const SizedBox(height: 24),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4, bottom: 10),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              const AppLogo(
-                                variant: AppLogoVariant.iconOnly,
-                                height: 30,
-                              ),
-                              const SizedBox(width: 14),
-                              Container(
-                                width: 0.5,
-                                height: 30,
-                                color: AppColors.border,
-                              ),
-                              const SizedBox(width: 14),
-                              // O arquivo é um quadrado com ~75% de margem
-                              // transparente. Recortar a faixa útil deixa a
-                              // marca na altura óptica certa e evita o vão
-                              // que a fazia parecer solta e minúscula.
-                              ClipRect(
-                                child: Align(
-                                  alignment: Alignment.center,
-                                  heightFactor:
-                                      HuBrasilLogo.alturaUtilFracao * 1.35,
-                                  child: const HuBrasilLogo(width: 140),
-                                ),
-                              ),
-                            ],
+                        const SizedBox(height: 6),
+                        // Só a HU Brasil: o ícone do HU ao lado repetia a
+                        // identidade que já está na logo grande do topo.
+                        // O arquivo é um quadrado com ~75% de margem
+                        // transparente, então o ClipRect recorta a faixa útil.
+                        Center(
+                          child: ClipRect(
+                            child: Align(
+                              alignment: Alignment.center,
+                              heightFactor: HuBrasilLogo.alturaUtilFracao * 1.3,
+                              child: const HuBrasilLogo(width: 168),
+                            ),
                           ),
                         ),
                       ],
@@ -357,16 +349,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
 /// Card discreto de login rápido com contas fixas — ferramenta de
 /// desenvolvimento, some quando AppConfig.showDemoLogin = false.
-class _DemoLoginCard extends StatelessWidget {
+class _DemoLoginCard extends StatefulWidget {
   final bool loading;
   final void Function((String, String) credentials) onSelect;
 
   const _DemoLoginCard({required this.loading, required this.onSelect});
 
   @override
+  State<_DemoLoginCard> createState() => _DemoLoginCardState();
+}
+
+class _DemoLoginCardState extends State<_DemoLoginCard> {
+  /// Recolhido por padrão. Aberto, os quatro botões de perfil somavam ~90px
+  /// e eram a maior causa de a tela de login passar da altura do celular.
+  /// O bloco continua aqui — a um toque de distância.
+  bool _aberto = false;
+
+  bool get loading => widget.loading;
+  void Function((String, String)) get onSelect => widget.onSelect;
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surfaceSubtle,
         borderRadius: BorderRadius.circular(14),
@@ -375,65 +380,80 @@ class _DemoLoginCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade600,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'DEMO',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                    color: Colors.white,
+          InkWell(
+            onTap: () => setState(() => _aberto = !_aberto),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade600,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'DEMO',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Login rápido para testes',
-                style: TextStyle(
-                  fontSize: 12,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Login rápido para testes',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                Icon(
+                  _aberto ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
                   color: AppColors.textSecondary,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _DemoButton(
-                label: 'Super Admin',
-                onPressed: loading
-                    ? null
-                    : () => onSelect(DemoCredentials.superAdmin),
-              ),
-              _DemoButton(
-                label: 'Diretor',
-                onPressed:
-                    loading ? null : () => onSelect(DemoCredentials.director),
-              ),
-              _DemoButton(
-                label: 'Supervisor',
-                onPressed: loading
-                    ? null
-                    : () => onSelect(DemoCredentials.supervisor),
-              ),
-              _DemoButton(
-                label: 'Inspetor',
-                onPressed: loading
-                    ? null
-                    : () => onSelect(DemoCredentials.inspector),
-              ),
-            ],
-          ),
+          if (_aberto) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _DemoButton(
+                  label: 'Super Admin',
+                  onPressed: loading
+                      ? null
+                      : () => onSelect(DemoCredentials.superAdmin),
+                ),
+                _DemoButton(
+                  label: 'Diretor',
+                  onPressed: loading
+                      ? null
+                      : () => onSelect(DemoCredentials.director),
+                ),
+                _DemoButton(
+                  label: 'Supervisor',
+                  onPressed: loading
+                      ? null
+                      : () => onSelect(DemoCredentials.supervisor),
+                ),
+                _DemoButton(
+                  label: 'Inspetor',
+                  onPressed: loading
+                      ? null
+                      : () => onSelect(DemoCredentials.inspector),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -481,16 +501,26 @@ class _MedicalCrossPatternPainter extends CustomPainter {
       final offsetX = ((y ~/ spacing) % 2 == 0) ? 0.0 : spacing / 2;
       for (double x = spacing / 2 + offsetX; x < size.width; x += spacing) {
         final path = Path()
-          ..addRRect(RRect.fromRectAndRadius(
-            Rect.fromCenter(
-                center: Offset(x, y), width: arm * 2, height: len * 2),
-            const Radius.circular(2),
-          ))
-          ..addRRect(RRect.fromRectAndRadius(
-            Rect.fromCenter(
-                center: Offset(x, y), width: len * 2, height: arm * 2),
-            const Radius.circular(2),
-          ));
+          ..addRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromCenter(
+                center: Offset(x, y),
+                width: arm * 2,
+                height: len * 2,
+              ),
+              const Radius.circular(2),
+            ),
+          )
+          ..addRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromCenter(
+                center: Offset(x, y),
+                width: len * 2,
+                height: arm * 2,
+              ),
+              const Radius.circular(2),
+            ),
+          );
         canvas.drawPath(path, paint);
       }
     }

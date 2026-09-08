@@ -5,6 +5,11 @@ class AppStrings {
   static const String appName = 'InspecionaHU';
   static const String appSlogan = 'Seu hospital mais seguro.';
 
+  /// Assinatura institucional — fonte UNICA. Aparece na tela de login, no
+  /// painel do Super Admin e no rodape do PDF. Trocar aqui muda em todos.
+  static const String assinaturaInstitucional =
+      'HU Brasil · Hospitais Universitários Federais';
+
   // Auth
   static const String login = 'Entrar';
   static const String logout = 'Sair';

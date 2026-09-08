@@ -105,7 +105,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
               greeting: profile?.fullName != null
                   ? 'Olá, ${profile!.fullName.split(' ').first}'
                   : 'Super Admin',
-              subtitle: 'Administração global · Rede EBSERH',
+              subtitle: 'Administração global · HU Brasil',
               actions: [
                 IconButton(
                   icon: const Icon(Icons.person_outline),
