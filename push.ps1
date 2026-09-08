@@ -1,8 +1,7 @@
 # push.ps1 — envia os commits locais para o GitHub.
 #
-# Os commits desta rodada de fechamento (arquivar checklist, pente fino nas
-# ações, calendário/relatórios, polimento, logo HU Brasil e offline) já estão
-# feitos, um por bloco. Este script só empurra o que existe.
+# Os commits já são feitos um por bloco durante o trabalho. Este script só
+# empurra o que existe; ele nao inventa commit nem mensagem.
 #
 # Uso:  .\push.ps1
 #       .\push.ps1 "mensagem"   -> commita alterações soltas antes de enviar
