@@ -42,10 +42,62 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
 
   List<_RecentInspection> _recentes = [];
 
+  // ── Filtros da lista de relatórios (bloco 3) ────────────────────────────
+  List<Sector> _setoresDisponiveis = [];
+  String? _filtroSetorId;
+  String? _filtroStatus;
+  String _busca = '';
+  final _buscaCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _buscaCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Relatórios após setor + status + busca por nome (bloco 3).
+  List<_RecentInspection> get _relatoriosFiltrados {
+    final q = _busca.trim().toLowerCase();
+    return _recentes.where((r) {
+      if (_filtroSetorId != null && r.sectorId != _filtroSetorId) return false;
+      if (_filtroStatus != null && r.status != _filtroStatus) return false;
+      if (q.isEmpty) return true;
+      return r.sectorName.toLowerCase().contains(q) ||
+          r.checklistTitle.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  /// Agrupa por dia, preservando a ordem (mais recente primeiro).
+  /// Sem isso a aba é uma coluna longa sem ponto de referência.
+  List<MapEntry<DateTime, List<_RecentInspection>>> get _agrupadosPorData {
+    final grupos = <DateTime, List<_RecentInspection>>{};
+    for (final r in _relatoriosFiltrados) {
+      final d = r.submittedAt;
+      final chave = d == null
+          ? DateTime.fromMillisecondsSinceEpoch(0)
+          : DateTime(d.year, d.month, d.day);
+      grupos.putIfAbsent(chave, () => []).add(r);
+    }
+    final entradas = grupos.entries.toList()
+      ..sort((a, b) => b.key.compareTo(a.key));
+    return entradas;
+  }
+
+  /// Cabeçalho de seção: Hoje / Ontem / data por extenso.
+  String _rotuloData(DateTime d) {
+    if (d.millisecondsSinceEpoch == 0) return 'Sem data de envio';
+    final hoje = DateTime.now();
+    final dHoje = DateTime(hoje.year, hoje.month, hoje.day);
+    final diff = dHoje.difference(d).inDays;
+    if (diff == 0) return 'Hoje';
+    if (diff == 1) return 'Ontem';
+    return AppDateUtils.formatDate(d);
   }
 
   Future<void> _load() async {
@@ -143,7 +195,7 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
       // ── Inspeções concluídas mais recentes ────────────────────────────
       var recentQuery = _db
           .from('inspections')
-          .select('id, sector_id, submitted_at, overall_status')
+          .select('id, sector_id, checklist_id, submitted_at, overall_status')
           .eq('hospital_id', hospitalId)
           .inFilter('overall_status', ['submitted', 'validated']);
       if (sectorIds != null) {
@@ -153,7 +205,7 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
         recentQuery = recentQuery.not('checklist_id', 'in', archivedChecklists);
       }
       final recentRows =
-          await recentQuery.order('submitted_at', ascending: false).limit(20);
+          await recentQuery.order('submitted_at', ascending: false).limit(100);
 
       final recentList = (recentRows as List).cast<Map<String, dynamic>>();
       final recentSectorIds =
@@ -169,6 +221,56 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
         }
       }
 
+      // ── Métricas por relatório (bloco 3) ──────────────────────────────
+      // Cada card mostra taxa de conformidade, nº de NCs e se tem foto.
+      final recentIds = recentList.map((e) => e['id'] as String).toList();
+      final metricas = <String, _ReportMetrics>{};
+      if (recentIds.isNotEmpty) {
+        final reportRows = await _db
+            .from('reports')
+            .select('inspection_id, compliance_rate, non_compliant')
+            .inFilter('inspection_id', recentIds);
+        for (final r in reportRows) {
+          metricas[r['inspection_id'] as String] = _ReportMetrics(
+            complianceRate: (r['compliance_rate'] as num?)?.toDouble(),
+            nonCompliant: (r['non_compliant'] as num? ?? 0).toInt(),
+          );
+        }
+
+        // Fotos: uma única varredura, só a coluna necessária.
+        final fotoRows = await _db
+            .from('inspection_responses')
+            .select('inspection_id, photo_url')
+            .inFilter('inspection_id', recentIds)
+            .not('photo_url', 'is', null);
+        for (final f in fotoRows) {
+          final id = f['inspection_id'] as String;
+          final atual = metricas[id];
+          metricas[id] = _ReportMetrics(
+            complianceRate: atual?.complianceRate,
+            nonCompliant: atual?.nonCompliant ?? 0,
+            temFoto: true,
+          );
+        }
+      }
+
+      // Títulos de checklist: usados pela busca por nome.
+      final checklistIds = recentList
+          .map((e) => e['checklist_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
+      final checklistTitulos = <String, String>{};
+      if (checklistIds.isNotEmpty) {
+        final rows = await _db
+            .from('checklists')
+            .select('id, title')
+            .inFilter('id', checklistIds);
+        for (final c in rows) {
+          checklistTitulos[c['id'] as String] = c['title'] as String;
+        }
+      }
+
       if (mounted) {
         setState(() {
           _conformidade = conf;
@@ -177,15 +279,24 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
           _totalNotApplicable = sumNa;
           _totalInspecoes = reports.length;
           _ncsAbertas = ncCount;
-          _recentes = recentList
-              .map((e) => _RecentInspection(
-                    id: e['id'] as String,
-                    status: e['overall_status'] as String,
-                    sectorName: sectorMap[e['sector_id']]?.name ?? '—',
-                    submittedAt:
-                        AppDateUtils.parseDate(e['submitted_at'] as String?),
-                  ))
-              .toList();
+          _recentes = recentList.map((e) {
+            final id = e['id'] as String;
+            final m = metricas[id];
+            return _RecentInspection(
+              id: id,
+              status: e['overall_status'] as String,
+              sectorId: e['sector_id'] as String,
+              sectorName: sectorMap[e['sector_id']]?.name ?? '—',
+              checklistTitle:
+                  checklistTitulos[e['checklist_id'] as String?] ?? 'Checklist',
+              submittedAt: AppDateUtils.parseDate(e['submitted_at'] as String?),
+              complianceRate: m?.complianceRate,
+              nonCompliant: m?.nonCompliant ?? 0,
+              temFoto: m?.temFoto ?? false,
+            );
+          }).toList();
+          _setoresDisponiveis = sectorMap.values.toList()
+            ..sort((a, b) => a.name.compareTo(b.name));
           _loading = false;
         });
       }
@@ -218,6 +329,180 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
     }
 
     return ids.toList();
+  }
+
+  /// Barra de filtros: busca por nome, setor e status (bloco 3).
+  Widget _buildFiltros() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _buscaCtrl,
+          onChanged: (v) => setState(() => _busca = v),
+          decoration: InputDecoration(
+            hintText: 'Buscar por setor ou checklist',
+            prefixIcon: const Icon(Icons.search, size: 20),
+            isDense: true,
+            suffixIcon: _busca.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    tooltip: 'Limpar busca',
+                    onPressed: () {
+                      _buscaCtrl.clear();
+                      setState(() => _busca = '');
+                    },
+                  ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              DropdownButton<String?>(
+                value: _filtroSetorId,
+                hint: const Text('Todos os setores'),
+                underline: const SizedBox.shrink(),
+                borderRadius: BorderRadius.circular(12),
+                items: [
+                  const DropdownMenuItem<String?>(
+                      value: null, child: Text('Todos os setores')),
+                  ..._setoresDisponiveis.map((s) => DropdownMenuItem<String?>(
+                        value: s.id,
+                        child: Text(s.name),
+                      )),
+                ],
+                onChanged: (v) => setState(() => _filtroSetorId = v),
+              ),
+              const SizedBox(width: 16),
+              DropdownButton<String?>(
+                value: _filtroStatus,
+                hint: const Text('Todos os status'),
+                underline: const SizedBox.shrink(),
+                borderRadius: BorderRadius.circular(12),
+                items: const [
+                  DropdownMenuItem<String?>(
+                      value: null, child: Text('Todos os status')),
+                  DropdownMenuItem<String?>(
+                      value: 'submitted', child: Text('Enviado')),
+                  DropdownMenuItem<String?>(
+                      value: 'validated', child: Text('Validado')),
+                ],
+                onChanged: (v) => setState(() => _filtroStatus = v),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Card do relatorio: taxa de conformidade, numero de NCs e se tem foto.
+  Widget _buildReportCard(_RecentInspection r) {
+    final rate = r.complianceRate;
+    final rateColor = rate == null
+        ? AppColors.textDisabled
+        : rate >= 80
+            ? AppColors.compliant
+            : rate >= 60
+                ? AppColors.pending
+                : AppColors.nonCompliant;
+
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => context.push(AppRoutes.relatorioIndividual(r.id)),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(r.sectorName,
+                            style: Theme.of(context).textTheme.titleSmall),
+                        const SizedBox(height: 2),
+                        Text(
+                          r.checklistTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  StatusBadge(status: r.status, compact: true),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(Icons.donut_small_outlined, size: 15, color: rateColor),
+                  const SizedBox(width: 4),
+                  Text(
+                    rate != null ? '${rate.toStringAsFixed(1)}%' : '—',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: rateColor, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(width: 14),
+                  Icon(Icons.warning_amber_rounded,
+                      size: 15,
+                      color: r.nonCompliant > 0
+                          ? AppColors.nonCompliant
+                          : AppColors.textDisabled),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${r.nonCompliant} NC',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: r.nonCompliant > 0
+                              ? AppColors.nonCompliant
+                              : AppColors.textSecondary,
+                          fontWeight: r.nonCompliant > 0
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                  ),
+                  const SizedBox(width: 14),
+                  Icon(
+                    r.temFoto
+                        ? Icons.photo_camera_outlined
+                        : Icons.no_photography_outlined,
+                    size: 15,
+                    color:
+                        r.temFoto ? AppColors.primary : AppColors.textDisabled,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    r.temFoto ? 'Com foto' : 'Sem foto',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: r.temFoto
+                            ? AppColors.textSecondary
+                            : AppColors.textDisabled),
+                  ),
+                  const Spacer(),
+                  if (r.submittedAt != null)
+                    Text(
+                      AppDateUtils.formatTime(r.submittedAt!),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: AppColors.textDisabled),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -320,24 +605,57 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
                             'Os relatórios aparecem aqui assim que os Inspetores enviarem as inspeções.',
                       ),
                     )
-                  else
-                    ..._recentes.map((r) => Card(
-                          child: ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: AppColors.primary50,
-                              child: Icon(Icons.description_outlined,
-                                  color: AppColors.primary),
+                  else ...[
+                    _buildFiltros(),
+                    const SizedBox(height: 12),
+                    if (_relatoriosFiltrados.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 24),
+                        child: EmptyState(
+                          icon: Icons.filter_alt_off_outlined,
+                          title: 'Nenhum relatório neste filtro',
+                          subtitle:
+                              'Ajuste o setor, o status ou a busca para ver '
+                              'outros relatórios.',
+                        ),
+                      )
+                    else
+                      // Agrupado por data: cada dia ganha cabeçalho próprio,
+                      // em vez de uma coluna longa sem referência (bloco 3).
+                      ..._agrupadosPorData.expand((grupo) => [
+                            Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(4, 16, 4, 8),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    _rotuloData(grupo.key),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                            color: AppColors.textSecondary),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${grupo.value.length}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                            color: AppColors.textDisabled),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Expanded(
+                                      child: Divider(
+                                          height: 1,
+                                          color: AppColors.border)),
+                                ],
+                              ),
                             ),
-                            title: Text(r.sectorName),
-                            subtitle: Text(r.submittedAt != null
-                                ? AppDateUtils.formatDateTime(r.submittedAt!)
-                                : '—'),
-                            trailing:
-                                StatusBadge(status: r.status, compact: true),
-                            onTap: () => context
-                                .push(AppRoutes.relatorioIndividual(r.id)),
-                          ),
-                        )),
+                            ...grupo.value.map(_buildReportCard),
+                          ]),
+                  ],
                 ],
               ),
             ),
@@ -348,13 +666,36 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
 class _RecentInspection {
   final String id;
   final String status;
+  final String sectorId;
   final String sectorName;
+  final String checklistTitle;
   final DateTime? submittedAt;
+  final double? complianceRate;
+  final int nonCompliant;
+  final bool temFoto;
 
   _RecentInspection({
     required this.id,
     required this.status,
+    required this.sectorId,
     required this.sectorName,
+    required this.checklistTitle,
     required this.submittedAt,
+    this.complianceRate,
+    this.nonCompliant = 0,
+    this.temFoto = false,
+  });
+}
+
+/// Métricas de um relatório, exibidas no card da lista (bloco 3).
+class _ReportMetrics {
+  final double? complianceRate;
+  final int nonCompliant;
+  final bool temFoto;
+
+  const _ReportMetrics({
+    this.complianceRate,
+    this.nonCompliant = 0,
+    this.temFoto = false,
   });
 }

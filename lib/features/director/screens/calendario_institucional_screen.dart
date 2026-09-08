@@ -213,6 +213,9 @@ class _CalendarioInstitucionalScreenState
                       DateUtils.isSameDay(date, _selectedDay!);
                   final dotColor =
                       tasks.isNotEmpty ? _dayColor(tasks) : null;
+                  // Dia COM tarefa ganha fundo e borda proprios: so o ponto
+                  // de 6px nao distinguia a primeira vista (bloco 3).
+                  final temTarefa = tasks.isNotEmpty;
 
                   return GestureDetector(
                     onTap: () => setState(() => _selectedDay =
@@ -224,12 +227,16 @@ class _CalendarioInstitucionalScreenState
                             ? AppColors.primary
                             : isToday
                                 ? AppColors.primary.withAlpha(30)
-                                : null,
+                                : temTarefa
+                                    ? AppColors.primary50
+                                    : null,
                         borderRadius: BorderRadius.circular(8),
                         border: isToday && !isSelected
-                            ? Border.all(
-                                color: AppColors.primary, width: 1)
-                            : null,
+                            ? Border.all(color: AppColors.primary, width: 1)
+                            : temTarefa && !isSelected
+                                ? Border.all(
+                                    color: AppColors.primary200, width: 0.5)
+                                : null,
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -241,10 +248,13 @@ class _CalendarioInstitucionalScreenState
                               fontWeight: FontWeight.w600,
                               color: isSelected
                                   ? Colors.white
-                                  : AppColors.textPrimary,
+                                  : temTarefa
+                                      ? AppColors.primary
+                                      : AppColors.textPrimary,
                             ),
                           ),
-                          if (dotColor != null)
+                          if (dotColor != null) ...[
+                            const SizedBox(height: 2),
                             Container(
                               width: 6,
                               height: 6,
@@ -253,6 +263,21 @@ class _CalendarioInstitucionalScreenState
                                 shape: BoxShape.circle,
                               ),
                             ),
+                            // Numero de tarefas do dia: informacao que antes
+                            // so aparecia depois de tocar.
+                            if (tasks.length > 1)
+                              Text(
+                                '${tasks.length}',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  height: 1.1,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                ),
+                              ),
+                          ],
                         ],
                       ),
                     ),

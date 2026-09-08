@@ -24,10 +24,39 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime? _selectedDay;
 
+  final _scrollCtrl = ScrollController();
+
+  /// Ancora da secao "tarefas do dia": usada para levar o usuario direto ao
+  /// conteudo ao tocar num dia, em vez de so marcar a celula e deixar a
+  /// lista fora da tela (bloco 3).
+  final _diaKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Toca no dia -> seleciona e rola ate o conteudo daquele dia.
+  void _selecionarDia(DateTime day, bool jaSelecionado) {
+    setState(() => _selectedDay = jaSelecionado ? null : day);
+    if (jaSelecionado) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _diaKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+        alignment: 0.05,
+      );
+    });
   }
 
   Future<void> _load() async {
@@ -140,6 +169,7 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
+                controller: _scrollCtrl,
                 padding: const EdgeInsets.all(16),
                 children: [
                   // ── Cabeçalho do mês ───────────────────────────────
@@ -157,6 +187,7 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
                   // ── Tarefas do dia selecionado ─────────────────────
                   if (_selectedDay != null) ...[
                     Row(
+                      key: _diaKey,
                       children: [
                         Text(
                           AppDateUtils.formatDate(_selectedDay!),
@@ -313,24 +344,28 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
                     _selectedDay!.month == day.month &&
                     _selectedDay!.day == day.day;
                 final dots = _dayDots(day);
+                // Dia COM tarefa ganha fundo próprio: antes a única pista
+                // eram pontos de 4px, invisíveis à primeira vista (bloco 3).
+                final temTarefa = dots.isNotEmpty;
 
                 return GestureDetector(
-                  onTap: () => setState(() {
-                    _selectedDay =
-                        isSelected ? null : day;
-                  }),
+                  onTap: () => _selecionarDia(day, isSelected),
                   child: Container(
                     decoration: BoxDecoration(
                       color: isSelected
                           ? AppColors.primary
                           : isToday
                               ? AppColors.primary.withValues(alpha: 0.08)
-                              : Colors.transparent,
+                              : temTarefa
+                                  ? AppColors.primary50
+                                  : Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
                       border: isToday && !isSelected
-                          ? Border.all(
-                              color: AppColors.primary, width: 1.0)
-                          : null,
+                          ? Border.all(color: AppColors.primary, width: 1.0)
+                          : temTarefa && !isSelected
+                              ? Border.all(
+                                  color: AppColors.primary200, width: 0.5)
+                              : null,
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -339,14 +374,16 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
                           '$dayNum',
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: isToday || isSelected
+                            fontWeight: isToday || isSelected || temTarefa
                                 ? FontWeight.w700
                                 : FontWeight.w400,
                             color: isSelected
                                 ? Colors.white
                                 : isToday
                                     ? AppColors.primary
-                                    : AppColors.textPrimary,
+                                    : temTarefa
+                                        ? AppColors.primary
+                                        : AppColors.textPrimary,
                           ),
                         ),
                         if (dots.isNotEmpty) ...[
@@ -355,8 +392,8 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: dots
                                 .map((c) => Container(
-                                      width: 4,
-                                      height: 4,
+                                      width: 5,
+                                      height: 5,
                                       margin: const EdgeInsets.symmetric(
                                           horizontal: 1),
                                       decoration: BoxDecoration(
