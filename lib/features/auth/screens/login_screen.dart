@@ -309,25 +309,36 @@ class _LoginScreenState extends State<LoginScreen> {
                         // Identidade do InspecionaHU ao lado da logo HU
                         // Brasil (bloco 5). A logo some sozinha se o arquivo
                         // não estiver no bundle — a tela não quebra.
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 24),
                         Padding(
-                          padding: const EdgeInsets.only(top: 4, bottom: 8),
+                          padding: const EdgeInsets.only(top: 4, bottom: 10),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               const AppLogo(
                                 variant: AppLogoVariant.iconOnly,
-                                height: 28,
+                                height: 30,
                               ),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 14),
                               Container(
                                 width: 0.5,
-                                height: 26,
+                                height: 30,
                                 color: AppColors.border,
                               ),
-                              const SizedBox(width: 10),
-                              const HuBrasilLogo(height: 30),
+                              const SizedBox(width: 14),
+                              // O arquivo é um quadrado com ~75% de margem
+                              // transparente. Recortar a faixa útil deixa a
+                              // marca na altura óptica certa e evita o vão
+                              // que a fazia parecer solta e minúscula.
+                              ClipRect(
+                                child: Align(
+                                  alignment: Alignment.center,
+                                  heightFactor:
+                                      HuBrasilLogo.alturaUtilFracao * 1.35,
+                                  child: const HuBrasilLogo(width: 140),
+                                ),
+                              ),
                             ],
                           ),
                         ),

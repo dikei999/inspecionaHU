@@ -259,7 +259,11 @@ class ReportExportService {
           // Logo HU Brasil, quando disponivel no bundle.
           if (huBrasilBytes != null) ...[
             pw.SizedBox(width: 10),
-            pw.Image(pw.MemoryImage(huBrasilBytes), height: 30),
+            // Medido por LARGURA: o arquivo e um quadrado com ~75% de
+            // margem transparente, entao limitar a altura encolhia a marca
+            // ate ficar ilegivel no cabecalho. A caixa quadrada de 62pt
+            // deixa a arte com ~15pt de altura util, proxima do nome do app.
+            pw.Image(pw.MemoryImage(huBrasilBytes), width: 62),
           ],
         ],
       ),
