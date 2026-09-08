@@ -135,6 +135,8 @@ void main() {
     });
   });
 
+  testesContadorSerie();
+
   group('série futura não cobra ação', () {
     test('série criada hoje, toda no futuro, não exige nada', () {
       final ts = List.generate(
@@ -151,6 +153,83 @@ void main() {
       expect(g.exigemAcao, 0, reason: 'nada vence hoje nem venceu');
       expect(g.atrasadas, 0);
       expect(g.agendadas, 5);
+    });
+  });
+}
+
+/// Item 2 — o contador mostrava "0 de 3" depois de responder a primeira de 4.
+///
+/// O painel do Inspetor consulta só 'pending' e 'in_progress', então as
+/// ocorrências já respondidas NÃO chegam na lista. O total precisa vir de
+/// series_total, não de tasks.length.
+void testesContadorSerie() {
+  group('contador da série com lista parcial', () {
+    test('primeira de 4 respondida -> "1 de 4", não "0 de 3"', () {
+      // O que a consulta do painel devolve: as 3 que sobraram.
+      final restantes = [
+        _t(id: '2', prazo: _hoje.add(const Duration(days: 7)),
+            serie: 'S', idx: 2, total: 4),
+        _t(id: '3', prazo: _hoje.add(const Duration(days: 14)),
+            serie: 'S', idx: 3, total: 4),
+        _t(id: '4', prazo: _hoje.add(const Duration(days: 21)),
+            serie: 'S', idx: 4, total: 4),
+      ];
+      final g = _agrupar(restantes).first;
+      expect(g.total, 4, reason: 'total é o tamanho da série');
+      expect(g.concluidas, 1, reason: '4 menos as 3 ainda abertas');
+      expect(g.progresso, '1 de 4');
+    });
+
+    test('três de 4 respondidas -> "3 de 4" e continua sendo série', () {
+      final restantes = [
+        _t(id: '4', prazo: _hoje.add(const Duration(days: 21)),
+            serie: 'S', idx: 4, total: 4),
+      ];
+      final g = _agrupar(restantes).first;
+      expect(g.progresso, '3 de 4');
+      expect(g.isSerie, isTrue,
+          reason: 'com uma ocorrência restante ainda é série, não avulsa');
+    });
+
+    test('lista completa (quadro de gestão) continua batendo', () {
+      // O quadro do Diretor traz tudo menos canceladas.
+      final todas = [
+        _t(id: '1', prazo: _hoje.subtract(const Duration(days: 7)),
+            serie: 'S', idx: 1, total: 4, status: 'validated'),
+        _t(id: '2', prazo: _hoje, serie: 'S', idx: 2, total: 4),
+        _t(id: '3', prazo: _hoje.add(const Duration(days: 7)),
+            serie: 'S', idx: 3, total: 4),
+        _t(id: '4', prazo: _hoje.add(const Duration(days: 14)),
+            serie: 'S', idx: 4, total: 4),
+      ];
+      final g = _agrupar(todas).first;
+      expect(g.total, 4);
+      expect(g.concluidas, 1);
+      expect(g.progresso, '1 de 4');
+    });
+
+    test('série inteira concluída -> "4 de 4"', () {
+      final todas = List.generate(
+        4,
+        (i) => _t(
+          id: 't$i',
+          prazo: _hoje.subtract(Duration(days: 21 - i * 7)),
+          serie: 'S',
+          idx: i + 1,
+          total: 4,
+          status: 'validated',
+        ),
+      );
+      final g = _agrupar(todas).first;
+      expect(g.progresso, '4 de 4');
+      expect(g.concluida, isTrue);
+    });
+
+    test('avulsa sem series_total não quebra', () {
+      final g = _agrupar([_t(id: 'a', prazo: _hoje)]).first;
+      expect(g.total, 1);
+      expect(g.concluidas, 0);
+      expect(g.isSerie, isFalse);
     });
   });
 }

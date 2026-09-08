@@ -23,15 +23,43 @@ class TaskGroup {
     required this.sectorName,
   });
 
-  bool get isSerie => seriesId != null && tasks.length > 1;
+  /// Pertence a uma serie. Usa o tamanho DECLARADO, nao o carregado: com
+  /// 3 de 4 ja respondidas, a lista traz uma tarefa so e o grupo deixaria
+  /// de ser serie, voltando a virar card avulso no meio do caminho.
+  bool get isSerie => seriesId != null && total > 1;
 
   /// A tarefa que representa o grupo quando ele é avulso.
   Task get unica => tasks.first;
 
-  int get total => tasks.length;
-  int get concluidas => tasks.where((t) => t.isRespondida).length;
+  /// Tamanho REAL da série, vindo de tasks.series_total.
+  ///
+  /// NÃO usar tasks.length: a lista carregada pode conter só um recorte —
+  /// o painel do Inspetor, por exemplo, consulta apenas 'pending' e
+  /// 'in_progress'. Ao responder a primeira de 4 ocorrências, a série
+  /// passava a carregar 3 tarefas com 0 respondidas e o card exibia
+  /// "0 de 3" em vez de "1 de 4".
+  int get total {
+    final declarado = tasks.first.seriesTotal;
+    if (declarado != null && declarado >= tasks.length) return declarado;
+    return tasks.length;
+  }
 
-  /// "2 de 7" — quantas já foram enviadas ou validadas.
+  /// Concluídas = total da série menos as que ainda estão abertas.
+  ///
+  /// Derivar do total evita depender de as ocorrências respondidas terem
+  /// sido carregadas: se a consulta trouxe só as abertas, as que faltam
+  /// são exatamente as já concluídas.
+  int get concluidas {
+    final abertas = tasks.where((t) => !t.isRespondida && !t.isCancelled).length;
+    final calculado = total - abertas;
+    // Piso em zero e teto no total: uma consulta que traga tudo continua
+    // batendo, e nenhum recorte estranho gera número negativo.
+    if (calculado < 0) return 0;
+    if (calculado > total) return total;
+    return calculado;
+  }
+
+  /// "2 de 7" — quantas já foram concluídas, sobre o tamanho da série.
   String get progresso => '$concluidas de $total';
 
   /// Ocorrências que exigem ação hoje (vencidas ou vencendo).
