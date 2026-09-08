@@ -16,6 +16,7 @@ import '../../../widgets/skeleton_loader.dart';
 import '../../../widgets/stat_card.dart';
 import '../../../widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/utils/compliance_utils.dart';
 
 /// Relatórios & Análises — um dos 4 cards principais do dashboard.
 /// Diretor vê o hospital inteiro; Supervisor vê apenas os setores dos quais
@@ -34,7 +35,6 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
   bool _loading = true;
   bool _isSupervisor = false;
 
-  double _conformidade = 0;
   int _totalCompliant = 0;
   int _totalNonCompliant = 0;
   int _totalNotApplicable = 0;
@@ -123,7 +123,6 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
         if (sectorIds.isEmpty) {
           if (mounted) {
             setState(() {
-              _conformidade = 0;
               _totalCompliant = 0;
               _totalNonCompliant = 0;
               _totalNotApplicable = 0;
@@ -158,18 +157,15 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
       }
       final reports = await reportsQuery;
 
-      double conf = 0;
-      int sumC = 0, sumNc = 0, sumNa = 0;
-      if (reports.isNotEmpty) {
-        final sum = reports.fold<double>(
-            0, (acc, r) => acc + (r['compliance_rate'] as num).toDouble());
-        conf = sum / reports.length;
-        for (final r in reports) {
-          sumC += (r['compliant'] as num? ?? 0).toInt();
-          sumNc += (r['non_compliant'] as num? ?? 0).toInt();
-          sumNa += (r['not_applicable'] as num? ?? 0).toInt();
-        }
-      }
+      // Fonte única: taxa agregada por ITEM, a mesma que o donut usa.
+      // A média das compliance_rate, que ficava aqui, dava o mesmo peso a
+      // uma inspeção de 2 itens e a uma de 50 — era a origem da divergência
+      // entre o gráfico e o card.
+      final agregado = ComplianceUtils.agregar(
+          (reports as List).cast<Map<String, dynamic>>());
+      final sumC = agregado.compliant;
+      final sumNc = agregado.nonCompliant;
+      final sumNa = agregado.notApplicable;
 
       // ── NCs em inspeções ainda não validadas ──────────────────────────
       var openQuery = _db
@@ -282,7 +278,6 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
 
       if (mounted) {
         setState(() {
-          _conformidade = conf;
           _totalCompliant = sumC;
           _totalNonCompliant = sumNc;
           _totalNotApplicable = sumNa;
@@ -631,21 +626,10 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
                       ),
                     ),
 
+                  // Sem o card "Conformidade": a taxa já está no donut
+                  // "Conformidade geral" logo abaixo.
                   Row(
                     children: [
-                      Expanded(
-                        child: StatCard(
-                          label: 'Conformidade',
-                          value: '${_conformidade.toStringAsFixed(1)}%',
-                          icon: Icons.verified_outlined,
-                          color: _conformidade >= 80
-                              ? AppColors.compliant
-                              : _conformidade >= 60
-                                  ? AppColors.pending
-                                  : AppColors.nonCompliant,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
                       Expanded(
                         child: StatCard(
                           label: 'Inspeções',

@@ -13,6 +13,7 @@ import '../../auth/providers/auth_provider.dart';
 import '../../shared/widgets/dashboard_header.dart';
 import '../../shared/widgets/dashboard_nav_card.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../core/utils/compliance_utils.dart';
 
 /// Dashboard do Supervisor — mesma estrutura de 4 destinos do Diretor,
 /// porém com os dados restritos aos setores que ele gerencia (owner ou
@@ -30,7 +31,6 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
   final _db = Supabase.instance.client;
 
   bool _loading = true;
-  double _conformidade = 0;
   int _inspecoesHoje = 0;
   int _ncsAbertas = 0;
   int _setoresPendentes = 0;
@@ -75,7 +75,6 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
       if (sectorIds.isEmpty) {
         if (mounted) {
           setState(() {
-            _conformidade = 0;
             _inspecoesHoje = 0;
             _ncsAbertas = 0;
             _setoresPendentes = 0;
@@ -105,18 +104,15 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
       }
       final reports = await reportsQuery;
 
-      double conf = 0;
-      int sumC = 0, sumNc = 0, sumNa = 0;
-      if (reports.isNotEmpty) {
-        final sum = reports.fold<double>(
-            0, (acc, r) => acc + (r['compliance_rate'] as num).toDouble());
-        conf = sum / reports.length;
-        for (final r in reports) {
-          sumC += (r['compliant'] as num? ?? 0).toInt();
-          sumNc += (r['non_compliant'] as num? ?? 0).toInt();
-          sumNa += (r['not_applicable'] as num? ?? 0).toInt();
-        }
-      }
+      // Fonte única: taxa agregada por ITEM, a mesma que o donut usa.
+      // A média das compliance_rate, que ficava aqui, dava o mesmo peso a
+      // uma inspeção de 2 itens e a uma de 50 — era a origem da divergência
+      // entre o gráfico e o card.
+      final agregado = ComplianceUtils.agregar(
+          (reports as List).cast<Map<String, dynamic>>());
+      final sumC = agregado.compliant;
+      final sumNc = agregado.nonCompliant;
+      final sumNa = agregado.notApplicable;
 
       final today = DateTime.now();
       final todayStr =
@@ -175,7 +171,6 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
 
       if (mounted) {
         setState(() {
-          _conformidade = conf;
           _inspecoesHoje = inspToday.length;
           _ncsAbertas = ncCount;
           _setoresPendentes = pendentes;
@@ -270,21 +265,10 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
               const SkeletonDashboard()
             else ...[
               // ── Métricas ──────────────────────────────────────────────
+              // Sem o card "Conformidade": a taxa já está no donut acima, e
+              // manter as duas era repetir a mesma informação.
               Row(
                 children: [
-                  Expanded(
-                    child: StatCard(
-                      label: 'Conformidade',
-                      value: '${_conformidade.toStringAsFixed(1)}%',
-                      icon: Icons.verified_outlined,
-                      color: _conformidade >= 80
-                          ? AppColors.compliant
-                          : _conformidade >= 60
-                              ? AppColors.pending
-                              : AppColors.nonCompliant,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
                   Expanded(
                     child: StatCard(
                       label: 'Inspeções hoje',
