@@ -10,6 +10,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/services/audit_service.dart';
 import '../../../core/utils/cpf_utils.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -426,7 +427,11 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
             // ── Sair ────────────────────────────────────────────────────
             OutlinedButton.icon(
-              onPressed: () => context.read<AuthProvider>().signOut(),
+              onPressed: () async {
+                if (await confirmSignOut(context) && context.mounted) {
+                  await context.read<AuthProvider>().signOut();
+                }
+              },
               icon: const Icon(Icons.logout, color: AppColors.nonCompliant),
               label: const Text('Sair da conta'),
               style: OutlinedButton.styleFrom(

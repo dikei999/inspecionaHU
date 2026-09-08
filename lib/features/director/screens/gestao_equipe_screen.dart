@@ -13,6 +13,7 @@ import '../../auth/providers/auth_provider.dart';
 import '../../shared/screens/convites_enviados_screen.dart';
 import 'acesso_compartilhado_screen.dart';
 import 'pedidos_acesso_screen.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 class GestaoEquipeScreen extends StatefulWidget {
   const GestaoEquipeScreen({super.key});
@@ -268,70 +269,111 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
     }
   }
 
+  /// Desativa OU reativa um membro (soft delete — nunca DELETE).
+  ///
+  /// Reativar é reversível e não destrutivo: ganhou diálogo e cor próprios
+  /// em vez de reaproveitar o alerta vermelho de "Desativar", que dizia a
+  /// coisa errada para quem só queria trazer alguém de volta (bloco 2).
   Future<void> _desativar(Profile p) async {
     final auth = context.read<AuthProvider>();
+    final desativando = p.isActive;
 
-    // Verifica tarefas ativas do supervisor
-    if (p.role == 'supervisor') {
-      final tasks = await _db
-          .from('tasks')
-          .select('id')
-          .eq('hospital_id', _hospitalId)
-          .inFilter('status', ['pending', 'in_progress']);
+    // Supervisor com tarefas ativas NO PRÓPRIO ESCOPO exige transferência.
+    // Antes a contagem pegava as tarefas do hospital inteiro, então qualquer
+    // tarefa pendente em qualquer setor bloqueava a desativação de qualquer
+    // Supervisor — inclusive de um sem nenhum setor.
+    if (desativando && p.role == 'supervisor') {
+      final bloqueado = await _supervisorTemTarefasAtivas(p.id);
       if (!mounted) return;
-      if (tasks.isNotEmpty) {
+      if (bloqueado) {
         _showSnack(
-          'Transfira as tarefas ativas deste Supervisor antes de desativar.',
+          'Este Supervisor tem tarefas ativas nos setores dele. '
+          'Transfira as tarefas antes de desativar.',
           error: true,
         );
         return;
       }
     }
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Desativar usuário?'),
-        content: Text('Desativar "${p.fullName}"?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.nonCompliant),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Desativar'),
-          ),
-        ],
-      ),
+    final confirm = await confirmAction(
+      context,
+      title: desativando ? 'Desativar usuário?' : 'Reativar usuário?',
+      message: desativando
+          ? '"${p.fullName}" perde o acesso ao sistema. O histórico e as '
+              'inspeções já feitas são preservados e você pode reativar '
+              'quando quiser.'
+          : '"${p.fullName}" volta a ter acesso ao sistema com o mesmo '
+              'perfil de antes.',
+      confirmLabel: desativando ? 'Desativar' : 'Reativar',
+      destructive: desativando,
+      icon: desativando ? Icons.person_off_outlined : Icons.person_outline,
     );
 
-    if (confirm != true || !mounted) return;
+    if (!confirm || !mounted) return;
 
     try {
       await _db
           .from('profiles')
-          .update({'status': 'inactive'})
+          .update({'status': desativando ? 'inactive' : 'active'})
           .eq('id', p.id);
 
       await AuditService.log(
         userId: auth.profile!.id,
         hospitalId: _hospitalId,
-        action: 'desativar_usuario',
+        action: desativando ? 'desativar_usuario' : 'reativar_usuario',
         entityType: 'profile',
         entityId: p.id,
         details: {'name': p.fullName, 'role': p.role},
       );
 
-      _showSnack('Usuário desativado.');
+      _showSnack(desativando ? 'Usuário desativado.' : 'Usuário reativado.');
       _load();
     } on PostgrestException catch (e) {
       debugPrint('[GestaoEquipe] _desativar PostgrestException: ${e.message} | ${e.code}');
-      _showSnack('Erro ao desativar: ${e.message}', error: true);
+      _showSnack('Erro ao salvar: ${e.message}', error: true);
     } catch (e) {
       debugPrint('[GestaoEquipe] _desativar erro inesperado: $e');
-      _showSnack('Erro inesperado ao desativar.', error: true);
+      _showSnack('Erro inesperado ao salvar.', error: true);
+    }
+  }
+
+  /// Há tarefa pendente/em andamento em algum setor deste Supervisor?
+  /// Escopo = setores onde é owner + setores com sector_access.
+  Future<bool> _supervisorTemTarefasAtivas(String supervisorId) async {
+    try {
+      final ids = <String>{};
+
+      final owned = await _db
+          .from('sectors')
+          .select('id')
+          .eq('hospital_id', _hospitalId)
+          .eq('owner_supervisor_id', supervisorId);
+      for (final r in owned) {
+        ids.add(r['id'] as String);
+      }
+
+      final shared = await _db
+          .from('sector_access')
+          .select('sector_id')
+          .eq('supervisor_id', supervisorId);
+      for (final r in shared) {
+        ids.add(r['sector_id'] as String);
+      }
+
+      if (ids.isEmpty) return false;
+
+      final tasks = await _db
+          .from('tasks')
+          .select('id')
+          .eq('hospital_id', _hospitalId)
+          .inFilter('sector_id', ids.toList())
+          .inFilter('status', ['pending', 'in_progress']);
+      return tasks.isNotEmpty;
+    } catch (e) {
+      debugPrint('[GestaoEquipe] _supervisorTemTarefasAtivas: $e');
+      // Na dúvida, bloqueia: desativar um Supervisor com tarefas órfãs é
+      // pior que exigir uma tentativa a mais.
+      return true;
     }
   }
 

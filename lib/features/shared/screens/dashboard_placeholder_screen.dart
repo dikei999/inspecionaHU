@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 class DashboardPlaceholderScreen extends StatelessWidget {
   const DashboardPlaceholderScreen({super.key});
@@ -35,7 +36,9 @@ class DashboardPlaceholderScreen extends StatelessWidget {
             icon: const Icon(Icons.logout),
             tooltip: 'Sair',
             onPressed: () async {
-              await context.read<AuthProvider>().signOut();
+              if (await confirmSignOut(context) && context.mounted) {
+                await context.read<AuthProvider>().signOut();
+              }
             },
           ),
         ],

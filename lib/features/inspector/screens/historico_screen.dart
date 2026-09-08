@@ -7,6 +7,7 @@ import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 class HistoricoScreen extends StatefulWidget {
   const HistoricoScreen({super.key});
@@ -132,7 +133,11 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sair',
-            onPressed: () => context.read<AuthProvider>().signOut(),
+            onPressed: () async {
+              if (await confirmSignOut(context) && context.mounted) {
+                await context.read<AuthProvider>().signOut();
+              }
+            },
           ),
         ],
       ),

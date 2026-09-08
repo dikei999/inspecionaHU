@@ -7,6 +7,7 @@ import '../../../core/models/task.dart';
 import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 class CalendarioScreen extends StatefulWidget {
   const CalendarioScreen({super.key});
@@ -126,7 +127,11 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sair',
-            onPressed: () => context.read<AuthProvider>().signOut(),
+            onPressed: () async {
+              if (await confirmSignOut(context) && context.mounted) {
+                await context.read<AuthProvider>().signOut();
+              }
+            },
           ),
         ],
       ),

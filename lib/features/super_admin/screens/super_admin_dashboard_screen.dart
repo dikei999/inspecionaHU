@@ -9,6 +9,7 @@ import '../../../widgets/charts.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../shared/widgets/dashboard_header.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 class SuperAdminDashboardScreen extends StatefulWidget {
   const SuperAdminDashboardScreen({super.key});
@@ -114,7 +115,11 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                 IconButton(
                   icon: const Icon(Icons.logout),
                   tooltip: 'Sair',
-                  onPressed: () => auth.signOut(),
+                  onPressed: () async {
+                    if (await confirmSignOut(context) && context.mounted) {
+                      await auth.signOut();
+                    }
+                  },
                 ),
               ],
               child: _loading

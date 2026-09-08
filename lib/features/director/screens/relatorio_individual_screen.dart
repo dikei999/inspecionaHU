@@ -15,6 +15,7 @@ import '../../../widgets/charts.dart';
 import '../../../widgets/nr32_clause_chip.dart';
 import '../../../widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 class RelatorioIndividualScreen extends StatefulWidget {
   final String inspectionId;
@@ -42,6 +43,10 @@ class _RelatorioIndividualScreenState
   String? _sectorName;
   String? _checklistTitle;
   String? _hospitalName;
+
+  /// Validar é exclusivo do Diretor (regra de perfis).
+  bool get _podeValidar =>
+      context.read<AuthProvider>().profile?.role == 'director';
 
   int get _compliant =>
       _responses.where((r) => r.status == 'C').length;
@@ -240,26 +245,21 @@ class _RelatorioIndividualScreenState
   // ── Validação ───────────────────────────────────────────────────────────────
 
   Future<void> _validar() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Validar relatório?'),
-        content: const Text(
-          'Após validar, o relatório ficará bloqueado para edição e o Inspetor será notificado.',
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Validar'),
-          ),
-        ],
-      ),
+    // Defesa em profundidade: o botão já está escondido para quem não é
+    // Diretor, mas a ação não confia só na visibilidade.
+    if (!_podeValidar) return;
+
+    final confirm = await confirmAction(
+      context,
+      title: 'Validar relatório?',
+      message: 'Após validar, o relatório fica BLOQUEADO para edição e o '
+          'Inspetor é notificado. Esta ação não pode ser desfeita.',
+      confirmLabel: 'Validar',
+      destructive: false,
+      icon: Icons.verified_outlined,
     );
 
-    if (confirm != true || !mounted) return;
+    if (!confirm || !mounted) return;
     setState(() => _validating = true);
 
     final auth = context.read<AuthProvider>();
@@ -358,7 +358,11 @@ class _RelatorioIndividualScreenState
                     child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.table_view_outlined),
           ),
-          if (inspection.isSubmitted && !inspection.isValidated)
+          // Só o Diretor valida (CLAUDE.md — Supervisor não valida).
+          // O Supervisor chega nesta tela pelos setores compartilhados e
+          // via Relatórios & Análises: sem este gate ele via um botão que
+          // a RLS ia recusar (bloco 2).
+          if (_podeValidar && inspection.isSubmitted && !inspection.isValidated)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ElevatedButton.icon(

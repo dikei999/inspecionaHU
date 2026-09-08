@@ -12,6 +12,7 @@ import '../../../widgets/stat_card.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../shared/widgets/dashboard_header.dart';
 import '../../shared/widgets/dashboard_nav_card.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 /// Dashboard do Supervisor — mesma estrutura de 4 destinos do Diretor,
 /// porém com os dados restritos aos setores que ele gerencia (owner ou
@@ -242,7 +243,11 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                 IconButton(
                   icon: const Icon(Icons.logout),
                   tooltip: 'Sair',
-                  onPressed: () => auth.signOut(),
+                  onPressed: () async {
+                    if (await confirmSignOut(context) && context.mounted) {
+                      await auth.signOut();
+                    }
+                  },
                 ),
               ],
               child: _loading

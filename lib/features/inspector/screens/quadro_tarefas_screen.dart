@@ -11,6 +11,7 @@ import '../../../widgets/notification_bell.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../shared/widgets/dashboard_header.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 /// Task + dados de exibição (título do checklist e nome do setor).
 class _TaskView {
@@ -145,7 +146,11 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
               IconButton(
                 icon: const Icon(Icons.logout),
                 tooltip: 'Sair',
-                onPressed: () => context.read<AuthProvider>().signOut(),
+                onPressed: () async {
+                  if (await confirmSignOut(context) && context.mounted) {
+                    await context.read<AuthProvider>().signOut();
+                  }
+                },
               ),
             ],
             child: _loading

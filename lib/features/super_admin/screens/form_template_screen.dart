@@ -6,6 +6,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/services/audit_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 /// Tela compartilhada para criar/editar templates globais (super_admin)
 /// e templates locais (director). Controle via [scope] e [templateId].
@@ -197,31 +198,26 @@ class _FormTemplateScreenState extends State<FormTemplateScreen> {
   }
 
   Future<void> _desativar() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Desativar template?'),
-        content: const Text(
-            'O template ficará indisponível para novos checklists. Os checklists existentes não são afetados.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.nonCompliant),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Desativar'),
-          ),
-        ],
-      ),
+    // O mesmo botão desativa e reativa. Antes o diálogo dizia sempre
+    // "Desativar template?" em vermelho, inclusive ao reativar (bloco 2).
+    final desativando = _existingStatus == 'active';
+
+    final confirm = await confirmAction(
+      context,
+      title: desativando ? 'Desativar template?' : 'Reativar template?',
+      message: desativando
+          ? 'O template ficará indisponível para novos checklists. '
+              'Os checklists existentes não são afetados.'
+          : 'O template volta a ficar disponível para novos checklists.',
+      confirmLabel: desativando ? 'Desativar' : 'Reativar',
+      destructive: desativando,
+      icon: desativando ? Icons.block_outlined : Icons.check_circle_outline,
     );
 
-    if (confirm != true || !mounted) return;
+    if (!confirm || !mounted) return;
 
     final auth = context.read<AuthProvider>();
-    final newStatus =
-        _existingStatus == 'active' ? 'inactive' : 'active';
+    final newStatus = desativando ? 'inactive' : 'active';
 
     try {
       await _db
