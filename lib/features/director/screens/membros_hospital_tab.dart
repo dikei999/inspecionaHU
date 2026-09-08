@@ -123,8 +123,8 @@ class _MembrosHospitalTabState extends State<MembrosHospitalTab> {
       title: desativando ? 'Desativar usuário?' : 'Reativar usuário?',
       message: desativando
           ? '"${p.fullName}" perde o acesso ao sistema. O histórico e as '
-              'inspeções já feitas são preservados e você pode reativar '
-              'quando quiser.'
+              'inspeções já feitas são preservados, e a reativação pode ser '
+              'feita a qualquer momento.'
           : '"${p.fullName}" volta a ter acesso ao sistema com o mesmo '
               'perfil de antes.',
       confirmLabel: desativando ? 'Desativar' : 'Reativar',
@@ -282,8 +282,8 @@ class _UserList extends StatelessWidget {
       return EmptyState(
         icon: Icons.groups_outlined,
         title: emptyMsg,
-        subtitle: 'Use "Convidar usuário" para trazer alguém para a equipe. '
-            'O vínculo é feito pelo código de perfil.',
+        subtitle: 'O convite é enviado pelo código de perfil do '
+            'usuário e vincula a pessoa a este hospital.',
       );
     }
     return ListView.builder(

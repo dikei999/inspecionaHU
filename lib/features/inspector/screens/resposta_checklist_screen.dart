@@ -472,12 +472,12 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       title: 'Sair com respostas não salvas?',
       message: _isOnline
           ? '$pendentes resposta(s) ainda não foram confirmadas pelo '
-                'servidor. Se sair agora, elas podem se perder.'
+                'servidor. Sair agora pode causar a perda dessas respostas.'
           : '$pendentes resposta(s) estão na fila aguardando conexão. '
-                'Elas ficam salvas neste aparelho e são enviadas quando a '
-                'internet voltar.',
-      confirmLabel: 'Sair mesmo assim',
-      cancelLabel: 'Continuar aqui',
+                'Elas permanecem salvas neste aparelho e serão enviadas '
+                'quando a conexão for restabelecida.',
+      confirmLabel: 'Sair',
+      cancelLabel: 'Permanecer',
       icon: Icons.warning_amber_rounded,
     );
   }

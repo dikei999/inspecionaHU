@@ -356,8 +356,9 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
         title: 'Arquivar relatório?',
         message: 'O relatório de ${r.sectorName} sai da taxa de '
             'conformidade, dos gráficos e de todos os indicadores.\n\n'
-            'Ele continua salvo e acessível pelo filtro "Arquivados", e '
-            'você pode desarquivar quando quiser. Nada é apagado.',
+            'O relatório continua salvo e acessível pelo filtro '
+            '"Arquivados", e pode ser desarquivado a qualquer momento. '
+            'Nenhum dado é apagado.',
         confirmLabel: 'Arquivar',
         icon: Icons.inventory_2_outlined,
       );

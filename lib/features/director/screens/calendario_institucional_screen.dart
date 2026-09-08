@@ -315,7 +315,7 @@ class _CalendarioInstitucionalScreenState
                 ? Center(
                     child: Text(
                       _selectedDay == null
-                          ? 'Toque em um dia para ver as tarefas.'
+                          ? 'Selecione um dia para ver as tarefas.'
                           : 'Sem tarefas neste dia.',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),

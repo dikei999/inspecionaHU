@@ -58,8 +58,9 @@ Future<bool> confirmAction(
 Future<bool> confirmSignOut(BuildContext context) => confirmAction(
       context,
       title: 'Sair da conta?',
-      message: 'Você precisará de internet para entrar novamente. '
-          'Respostas ainda não enviadas continuam salvas neste aparelho.',
+      message: 'Será necessário conexão com a internet para entrar '
+          'novamente. As respostas ainda não enviadas continuam salvas '
+          'neste aparelho.',
       confirmLabel: 'Sair',
       icon: Icons.logout,
     );

@@ -567,9 +567,9 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
         title: 'Excluir checklist?',
         message: '"${checklist.title}" sai das listas e não poderá mais '
             'receber tarefas novas.\n\n'
-            'As inspeções já respondidas continuam íntegras e os relatórios '
-            'gerados por ele seguem valendo. Nada é apagado do banco e você '
-            'pode restaurar depois.',
+            'As inspeções já respondidas continuam íntegras e os '
+            'relatórios gerados por ele seguem valendo. Nenhum dado é '
+            'apagado, e a restauração pode ser feita a qualquer momento.',
         confirmLabel: 'Excluir',
         icon: Icons.delete_outline,
       );
@@ -1684,8 +1684,9 @@ class _EquipeTabState extends State<_EquipeTab> {
                             color: AppColors.textSecondary),
                         title: const Text('Nenhum Inspetor vinculado'),
                         subtitle: Text(widget.canEdit
-                            ? 'Use "Vincular Inspetor" para adicionar.'
-                            : 'Peça ao Diretor para vincular Inspetores.'),
+                            ? 'Nenhum Inspetor foi vinculado a este setor.'
+                            : 'A vinculação de Inspetores é feita pelo '
+                                'Diretor ou pelo Supervisor responsável.'),
                       ),
                     )
                   else

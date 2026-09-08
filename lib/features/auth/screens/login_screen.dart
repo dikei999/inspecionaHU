@@ -323,8 +323,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Sem conexão. Você pode entrar com os '
-                                  'dados salvos neste aparelho.',
+                                  'Sem conexão. A entrada será feita com '
+                                  'os dados salvos neste aparelho.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 11,

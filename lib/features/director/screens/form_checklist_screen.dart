@@ -418,8 +418,8 @@ class _FormChecklistScreenState extends State<FormChecklistScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Prazo e frequência são definidos ao atribuir a '
-                      'tarefa, não aqui.',
+                      'O prazo e a frequência são definidos na '
+                      'atribuição da tarefa.',
                       style: Theme.of(context)
                           .textTheme
                           .bodySmall

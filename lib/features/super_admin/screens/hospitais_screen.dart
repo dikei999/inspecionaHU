@@ -161,8 +161,8 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
             '${setores > 0 ? '$setores setor(es)' : ''}'
             '${setores > 0 && usuarios > 0 ? ' e ' : ''}'
             '${usuarios > 0 ? '$usuarios usuário(s)' : ''} vinculado(s). '
-            'Apagar destruiria dados operacionais. Use "Desativar" — o '
-            'hospital fica inacessível e todo o histórico é preservado.',
+            'Apagar destruiria dados operacionais. A opção "Desativar" '
+            'torna o hospital inacessível e preserva todo o histórico.',
           ),
           actions: [
             TextButton(

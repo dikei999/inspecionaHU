@@ -364,7 +364,7 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                                 : 'Nenhuma tarefa nesta categoria',
                             subtitle: _filter == 'all'
                                 ? 'Quando um Supervisor ou Diretor atribuir uma tarefa, ela aparecerá aqui.'
-                                : 'Toque em "Todas" para ver todas as tarefas.',
+                                : 'Selecione "Todas" para ver as demais tarefas.',
                           )
                         : ListView.separated(
                             padding: const EdgeInsets.all(16),
