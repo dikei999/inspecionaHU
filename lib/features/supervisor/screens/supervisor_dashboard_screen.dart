@@ -346,10 +346,10 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
             DashboardNavCard(
               icon: Icons.people_outline,
               color: AppColors.compliant,
-              title: 'Inspetores',
-              subtitle: 'Inspetores, convites e acesso compartilhado',
+              title: 'Usuários',
+              subtitle: 'Inspetores do hospital',
               onTap: () async {
-                await context.push(AppRoutes.gestaoEquipe);
+                await context.push(AppRoutes.gestaoUsuariosHospital);
                 _load();
               },
             ),

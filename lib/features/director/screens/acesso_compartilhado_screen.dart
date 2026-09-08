@@ -15,7 +15,15 @@ class AcessoCompartilhadoScreen extends StatefulWidget {
   /// (Equipe) — sem AppBar própria. A lógica de negócio é a mesma.
   final bool embedded;
 
-  const AcessoCompartilhadoScreen({super.key, this.embedded = false});
+  /// Quando informado, mostra apenas o acesso compartilhado DESTE setor —
+  /// é assim que a aba Equipe do setor usa a tela.
+  final String? sectorId;
+
+  const AcessoCompartilhadoScreen({
+    super.key,
+    this.embedded = false,
+    this.sectorId,
+  });
 
   @override
   State<AcessoCompartilhadoScreen> createState() =>
@@ -50,12 +58,16 @@ class _AcessoCompartilhadoScreenState
     }
 
     try {
-      final setoresData = await _db
+      // Embutida na aba Equipe de um setor, a tela mostra so aquele setor.
+      var setoresQuery = _db
           .from('sectors')
           .select()
           .eq('hospital_id', _hospitalId!)
-          .eq('status', 'active')
-          .order('name', ascending: true);
+          .eq('status', 'active');
+      if (widget.sectorId != null) {
+        setoresQuery = setoresQuery.eq('id', widget.sectorId!);
+      }
+      final setoresData = await setoresQuery.order('name', ascending: true);
 
       final supsData = await _db
           .from('profiles')

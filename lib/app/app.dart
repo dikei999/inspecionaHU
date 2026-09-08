@@ -28,7 +28,7 @@ import '../features/super_admin/screens/painel_demo_screen.dart';
 import '../features/director/screens/director_dashboard_screen.dart';
 import '../features/director/screens/gestao_setores_screen.dart';
 import '../features/director/screens/form_setor_screen.dart';
-import '../features/director/screens/gestao_equipe_screen.dart';
+import '../features/director/screens/gestao_usuarios_hospital_screen.dart';
 import '../features/director/screens/form_checklist_screen.dart';
 import '../features/director/screens/templates_locais_screen.dart';
 import '../features/director/screens/atribuir_tarefa_screen.dart';
@@ -201,7 +201,9 @@ class _AppState extends State<App> {
       ),
       GoRoute(
         path: AppRoutes.convidarUsuario,
-        builder: (context, state) => const ConvidarUsuarioScreen(),
+        builder: (context, state) => ConvidarUsuarioScreen(
+          initialSectorId: state.uri.queryParameters['sectorId'],
+        ),
       ),
       GoRoute(
         path: AppRoutes.convitesEnviados,
@@ -276,8 +278,8 @@ class _AppState extends State<App> {
             FormSetorScreen(sectorId: state.pathParameters['id']),
       ),
       GoRoute(
-        path: AppRoutes.gestaoEquipe,
-        builder: (context, state) => const GestaoEquipeScreen(),
+        path: AppRoutes.gestaoUsuariosHospital,
+        builder: (context, state) => const GestaoUsuariosHospitalScreen(),
       ),
       GoRoute(
         path: AppRoutes.novoChecklist,

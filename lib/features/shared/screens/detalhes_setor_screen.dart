@@ -9,6 +9,8 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/checklist.dart';
 import '../../../core/services/archive_service.dart';
+import '../../director/screens/acesso_compartilhado_screen.dart';
+import 'convites_enviados_screen.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/models/sector.dart';
@@ -1645,9 +1647,34 @@ class _EquipeTabState extends State<_EquipeTab> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text(
-                    'Inspetores vinculados',
-                    style: Theme.of(context).textTheme.titleSmall,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Inspetores vinculados',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                      // Convidar alguém JÁ vinculado a este setor: é o
+                      // convite do setor, não o genérico do hospital.
+                      if (widget.canEdit)
+                        TextButton.icon(
+                          onPressed: () async {
+                            await context.push(
+                                AppRoutes.convidarUsuarioNoSetor(
+                                    widget.sector.id));
+                            if (context.mounted) _load();
+                          },
+                          icon: const Icon(Icons.person_add_alt_1, size: 16),
+                          label: const Text('Convidar'),
+                          style: TextButton.styleFrom(
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 6),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   if (_inspetores.isEmpty)
@@ -1680,6 +1707,38 @@ class _EquipeTabState extends State<_EquipeTab> {
                             subtitle: Text(p.email),
                           ),
                         )),
+
+                  // ── Acesso compartilhado DESTE setor ──────────────────
+                  const SizedBox(height: 20),
+                  Text(
+                    'Acesso compartilhado',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  // Altura limitada: as telas embutidas trazem Scaffold
+                  // proprio e nao podem crescer sem limite dentro da lista.
+                  SizedBox(
+                    height: 260,
+                    child: AcessoCompartilhadoScreen(
+                      embedded: true,
+                      sectorId: widget.sector.id,
+                    ),
+                  ),
+
+                  // ── Convites enviados para ESTE setor ─────────────────
+                  const SizedBox(height: 20),
+                  Text(
+                    'Convites enviados',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 280,
+                    child: ConvitesEnviadosScreen(
+                      embedded: true,
+                      sectorId: widget.sector.id,
+                    ),
+                  ),
                 ],
               ),
             ),

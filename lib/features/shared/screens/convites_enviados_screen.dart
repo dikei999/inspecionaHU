@@ -13,7 +13,14 @@ class ConvitesEnviadosScreen extends StatefulWidget {
   /// (Equipe) — sem AppBar própria. A lógica de negócio é a mesma.
   final bool embedded;
 
-  const ConvitesEnviadosScreen({super.key, this.embedded = false});
+  /// Quando informado, mostra apenas os convites que vinculam a ESTE setor.
+  final String? sectorId;
+
+  const ConvitesEnviadosScreen({
+    super.key,
+    this.embedded = false,
+    this.sectorId,
+  });
 
   @override
   State<ConvitesEnviadosScreen> createState() => _ConvitesEnviadosScreenState();
@@ -45,9 +52,14 @@ class _ConvitesEnviadosScreenState extends State<ConvitesEnviadosScreen> {
     try {
       final data = await InvitationService.getSentInvitations(
           statusFilter: _filter == 'all' ? null : _filter);
+      // Embutida na aba Equipe de um setor: so os convites que vinculam
+      // aquele setor.
+      final filtrados = widget.sectorId == null
+          ? data
+          : data.where((i) => i.sectorIds.contains(widget.sectorId)).toList();
       if (mounted) {
         setState(() {
-          _invites = data;
+          _invites = filtrados;
           _loading = false;
         });
       }

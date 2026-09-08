@@ -16,7 +16,11 @@ import '../../auth/providers/auth_provider.dart';
 /// - Diretor: pode convidar Supervisor ou Inspetor; vê todos os setores.
 /// - Supervisor: só convida Inspetor; vê seus setores (owner) + os com can_edit.
 class ConvidarUsuarioScreen extends StatefulWidget {
-  const ConvidarUsuarioScreen({super.key});
+  /// Setor pre-selecionado quando o convite parte da aba Equipe de um
+  /// setor: o convidado ja nasce vinculado aquele setor.
+  final String? initialSectorId;
+
+  const ConvidarUsuarioScreen({super.key, this.initialSectorId});
 
   @override
   State<ConvidarUsuarioScreen> createState() => _ConvidarUsuarioScreenState();
@@ -114,6 +118,14 @@ class _ConvidarUsuarioScreenState extends State<ConvidarUsuarioScreen> {
         setState(() {
           _sectors = sectors;
           _loadingSectors = false;
+          // Convite vindo da aba Equipe de um setor ja nasce vinculado a
+          // ele — o Diretor nao precisa reencontrar o setor na lista.
+          final inicial = widget.initialSectorId;
+          if (inicial != null &&
+              _selectedSectorIds.isEmpty &&
+              sectors.any((x) => x.id == inicial)) {
+            _selectedSectorIds.add(inicial);
+          }
         });
       }
     } catch (_) {

@@ -13,6 +13,10 @@ class AppRoutes {
   static String detalhesSetor(String sectorId) => '/setor/$sectorId';
   static const notificacoes = '/notificacoes';
   static const convidarUsuario = '/convidar-usuario';
+
+  /// Convite ja vinculado a um setor — usado pela aba Equipe do setor.
+  static String convidarUsuarioNoSetor(String sectorId) =>
+      '$convidarUsuario?sectorId=$sectorId';
   static const convitesEnviados = '/convites-enviados';
 
   // ── Super Admin ──────────────────────────────────────────────────────────
@@ -32,7 +36,9 @@ class AppRoutes {
   static const gestaoSetores = '/director/setores';
   static const novoSetor = '/director/setores/novo';
   static String editarSetor(String id) => '/director/setores/$id/editar';
-  static const gestaoEquipe = '/director/equipe';
+  /// Gestão de Usuários do hospital: membros + pedidos de acesso.
+  /// O que é de setor vive na aba Equipe do próprio setor.
+  static const gestaoUsuariosHospital = '/director/usuarios';
   static const novoChecklist = '/director/checklists/novo';
   /// Novo checklist com setor pré-selecionado (aba Checklists do setor).
   static String novoChecklistNoSetor(String sectorId) =>

@@ -294,11 +294,10 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
             DashboardNavCard(
               icon: Icons.people_outline,
               color: AppColors.compliant,
-              title: 'Equipe',
-              subtitle:
-                  'Membros, convites, pedidos e acesso compartilhado',
+              title: 'Usuários',
+              subtitle: 'Membros do hospital e pedidos de acesso',
               onTap: () async {
-                await context.push(AppRoutes.gestaoEquipe);
+                await context.push(AppRoutes.gestaoUsuariosHospital);
                 _load();
               },
             ),
