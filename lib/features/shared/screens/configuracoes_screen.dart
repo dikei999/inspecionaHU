@@ -42,13 +42,22 @@ class _ConfiguracoesScreenState extends State<ConfiguracoesScreen>
     final profile = context.read<AuthProvider>().profile;
     _isDirector = profile?.role == 'director';
     _tab = TabController(length: 3, vsync: this);
+    // O FAB acompanha a aba visível: "Novo template" não tem sentido em
+    // Notificações nem em Hospital.
+    _tab.addListener(_onTabChanged);
     _load();
   }
 
   @override
   void dispose() {
+    _tab.removeListener(_onTabChanged);
     _tab.dispose();
     super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (_tab.indexIsChanging) return;
+    setState(() {});
   }
 
   Future<void> _load() async {
@@ -114,7 +123,9 @@ class _ConfiguracoesScreenState extends State<ConfiguracoesScreen>
           ],
         ),
       ),
-      floatingActionButton: _isDirector
+      // Só a aba de templates tem ação própria, e só o Diretor cria
+      // template local (o Super Admin cuida dos globais em outra tela).
+      floatingActionButton: _isDirector && _tab.index == 0
           ? FloatingActionButton.extended(
               onPressed: () async {
                 await context.push(AppRoutes.novoTemplateLocal);

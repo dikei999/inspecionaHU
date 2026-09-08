@@ -48,13 +48,22 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
     final role = context.read<AuthProvider>().profile?.role;
     _myRole = role;
     _tab = TabController(length: role == 'director' ? 4 : 3, vsync: this);
+    // O FAB muda conforme a aba: sem isto, "Convidar usuário" ficava
+    // pairando sobre abas que não têm essa ação.
+    _tab.addListener(_onTabChanged);
     _load();
   }
 
   @override
   void dispose() {
+    _tab.removeListener(_onTabChanged);
     _tab.dispose();
     super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (_tab.indexIsChanging) return;
+    setState(() {});
   }
 
   Future<void> _load() async {
@@ -399,15 +408,19 @@ class _GestaoEquipeScreenState extends State<GestaoEquipeScreen>
           ],
         ),
       ),
-      // Único ponto de convite do app (regra da reorganização).
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          await context.push(AppRoutes.convidarUsuario);
-          _load();
-        },
-        icon: const Icon(Icons.person_add_alt_1),
-        label: const Text('Convidar usuário'),
-      ),
+      // Só a aba de membros tem ação própria. "Convites enviados",
+      // "Pedidos de acesso" e "Acesso compartilhado" são listas de
+      // acompanhamento — convidar dali não fazia sentido.
+      floatingActionButton: _tab.index == 0
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                await context.push(AppRoutes.convidarUsuario);
+                _load();
+              },
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Convidar usuário'),
+            )
+          : null,
       body: _loading
           ? const SkeletonList(itemHeight: 84)
           : TabBarView(
