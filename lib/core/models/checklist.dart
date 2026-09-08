@@ -11,12 +11,17 @@ class Checklist {
   final String createdBy;
   final DateTime createdAt;
 
-  /// Arquivamento REVERSÍVEL (bloco 1). Diferente de status='inactive':
-  /// arquivado sai das listas de trabalho E de todos os indicadores.
-  /// Nada é deletado — as inspeções já respondidas continuam acessíveis
-  /// pelo filtro "Arquivados".
+  /// OBSOLETO: o arquivamento passou para a inspeção — quem alimenta os
+  /// indicadores é o relatório, não o formulário. Mantido apenas para ler
+  /// dados já gravados; não é mais usado na interface.
   final DateTime? archivedAt;
   final String? archivedBy;
+
+  /// EXCLUSÃO em soft delete (regra do projeto: nunca DELETE). Sai das
+  /// listas e não recebe tarefa nova, mas as inspeções já feitas por ele
+  /// continuam íntegras e legíveis.
+  final DateTime? deletedAt;
+  final String? deletedBy;
 
   const Checklist({
     required this.id,
@@ -32,6 +37,8 @@ class Checklist {
     required this.createdAt,
     this.archivedAt,
     this.archivedBy,
+    this.deletedAt,
+    this.deletedBy,
   });
 
   factory Checklist.fromJson(Map<String, dynamic> json) => Checklist(
@@ -56,6 +63,10 @@ class Checklist {
             ? DateTime.parse(json['archived_at'] as String)
             : null,
         archivedBy: json['archived_by'] as String?,
+        deletedAt: json['deleted_at'] != null
+            ? DateTime.parse(json['deleted_at'] as String)
+            : null,
+        deletedBy: json['deleted_by'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -72,13 +83,16 @@ class Checklist {
         'created_at': createdAt.toIso8601String(),
         'archived_at': archivedAt?.toIso8601String(),
         'archived_by': archivedBy,
+        'deleted_at': deletedAt?.toIso8601String(),
+        'deleted_by': deletedBy,
       };
 
   bool get isActive => status == 'active';
 
-  /// Arquivado: fora da operação e fora de todo indicador, mas preservado.
-  bool get isArchived => archivedAt != null;
+  /// Excluído em soft delete: fora das listas, sem tarefa nova. As
+  /// inspeções já feitas por ele continuam valendo.
+  bool get isDeleted => deletedAt != null;
 
-  /// Em operação: ativo E não arquivado. É o que gera tarefa nova.
-  bool get isOperational => isActive && !isArchived;
+  /// Em operação: ativo E não excluído. É o que gera tarefa nova.
+  bool get isOperational => isActive && !isDeleted;
 }

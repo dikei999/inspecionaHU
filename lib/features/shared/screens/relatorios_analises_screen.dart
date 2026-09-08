@@ -10,6 +10,7 @@ import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/sector.dart';
 import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/charts.dart';
+import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../../widgets/stat_card.dart';
@@ -48,6 +49,10 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
   String? _filtroStatus;
   String _busca = '';
   final _buscaCtrl = TextEditingController();
+
+  /// Filtro "Arquivados": false = relatórios ativos (padrão), true = só os
+  /// arquivados. Arquivado é reversível e não sai do banco.
+  bool _verArquivados = false;
 
   @override
   void initState() {
@@ -132,10 +137,9 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
         }
       }
 
-      // Checklists arquivados ficam FORA de todo indicador (bloco 1).
-      final archivedChecklists =
-          await ArchiveService.archivedChecklistIds(hospitalId);
-      final archivedInspections = await ArchiveService.inspectionIdsDeArquivados(
+      // Relatórios arquivados ficam FORA de todo indicador e só aparecem
+      // no filtro "Arquivados" da lista abaixo.
+      final archivedInspections = await ArchiveService.archivedInspectionIds(
           hospitalId,
           sectorIds: sectorIds);
 
@@ -176,8 +180,8 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
       if (sectorIds != null) {
         openQuery = openQuery.inFilter('sector_id', sectorIds);
       }
-      if (archivedChecklists.isNotEmpty) {
-        openQuery = openQuery.not('checklist_id', 'in', archivedChecklists);
+      if (archivedInspections.isNotEmpty) {
+        openQuery = openQuery.not('id', 'in', archivedInspections);
       }
       final openInspections = await openQuery;
 
@@ -195,14 +199,19 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
       // ── Inspeções concluídas mais recentes ────────────────────────────
       var recentQuery = _db
           .from('inspections')
-          .select('id, sector_id, checklist_id, submitted_at, overall_status')
+          .select('id, sector_id, checklist_id, submitted_at, '
+              'overall_status, archived_at')
           .eq('hospital_id', hospitalId)
           .inFilter('overall_status', ['submitted', 'validated']);
       if (sectorIds != null) {
         recentQuery = recentQuery.inFilter('sector_id', sectorIds);
       }
-      if (archivedChecklists.isNotEmpty) {
-        recentQuery = recentQuery.not('checklist_id', 'in', archivedChecklists);
+      // A lista respeita o filtro: por padrão esconde os arquivados;
+      // em "Arquivados", mostra SÓ eles.
+      if (_verArquivados) {
+        recentQuery = recentQuery.not('archived_at', 'is', null);
+      } else {
+        recentQuery = recentQuery.isFilter('archived_at', null);
       }
       final recentRows =
           await recentQuery.order('submitted_at', ascending: false).limit(100);
@@ -293,6 +302,7 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
               complianceRate: m?.complianceRate,
               nonCompliant: m?.nonCompliant ?? 0,
               temFoto: m?.temFoto ?? false,
+              arquivado: e['archived_at'] != null,
             );
           }).toList();
           _setoresDisponiveis = sectorMap.values.toList()
@@ -331,11 +341,74 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
     return ids.toList();
   }
 
+  /// Arquiva ou desarquiva um relatório (item 2).
+  ///
+  /// Diretor e Supervisor podem; o escopo do Supervisor vem da RLS de
+  /// `inspections`, que já limita o UPDATE aos setores dele.
+  Future<void> _toggleArquivar(_RecentInspection r) async {
+    final profile = context.read<AuthProvider>().profile;
+    if (profile == null) return;
+    final arquivar = !r.arquivado;
+
+    if (arquivar) {
+      final ok = await confirmAction(
+        context,
+        title: 'Arquivar relatório?',
+        message: 'O relatório de ${r.sectorName} sai da taxa de '
+            'conformidade, dos gráficos e de todos os indicadores.\n\n'
+            'Ele continua salvo e acessível pelo filtro "Arquivados", e '
+            'você pode desarquivar quando quiser. Nada é apagado.',
+        confirmLabel: 'Arquivar',
+        icon: Icons.inventory_2_outlined,
+      );
+      if (!ok || !mounted) return;
+    }
+
+    final erro = await ArchiveService.setInspectionArchived(
+      inspectionId: r.id,
+      archive: arquivar,
+      userId: profile.id,
+      hospitalId: profile.hospitalId,
+      descricao: '${r.sectorName} · ${r.checklistTitle}',
+    );
+
+    if (!mounted) return;
+    if (erro != null) {
+      showActionFeedback(context, erro, error: true);
+      return;
+    }
+    showActionFeedback(
+        context,
+        arquivar
+            ? 'Relatório arquivado. Fora dos indicadores.'
+            : 'Relatório desarquivado. De volta aos indicadores.');
+    _load();
+  }
+
   /// Barra de filtros: busca por nome, setor e status (bloco 3).
   Widget _buildFiltros() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(
+                value: false,
+                label: Text('Ativos'),
+                icon: Icon(Icons.insights_outlined, size: 18)),
+            ButtonSegment(
+                value: true,
+                label: Text('Arquivados'),
+                icon: Icon(Icons.inventory_2_outlined, size: 18)),
+          ],
+          selected: {_verArquivados},
+          showSelectedIcon: false,
+          onSelectionChanged: (sel) {
+            setState(() => _verArquivados = sel.first);
+            _load();
+          },
+        ),
+        const SizedBox(height: 10),
         TextField(
           controller: _buscaCtrl,
           onChanged: (v) => setState(() => _busca = v),
@@ -440,6 +513,21 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
                     ),
                   ),
                   StatusBadge(status: r.status, compact: true),
+                  // Arquivar/desarquivar o relatório.
+                  IconButton(
+                    icon: Icon(
+                      r.arquivado
+                          ? Icons.unarchive_outlined
+                          : Icons.inventory_2_outlined,
+                      size: 18,
+                      color: AppColors.textSecondary,
+                    ),
+                    tooltip: r.arquivado
+                        ? 'Desarquivar — volta aos indicadores'
+                        : 'Arquivar — sai dos indicadores',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _toggleArquivar(r),
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -595,7 +683,7 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
                       style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 12),
 
-                  if (_recentes.isEmpty)
+                  if (_recentes.isEmpty && !_verArquivados)
                     const Padding(
                       padding: EdgeInsets.only(top: 24),
                       child: EmptyState(
@@ -604,6 +692,23 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
                         subtitle:
                             'Os relatórios aparecem aqui assim que os Inspetores enviarem as inspeções.',
                       ),
+                    )
+                  else if (_recentes.isEmpty && _verArquivados)
+                    Column(
+                      children: [
+                        _buildFiltros(),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 24),
+                          child: EmptyState(
+                            icon: Icons.inventory_2_outlined,
+                            title: 'Nenhum relatório arquivado',
+                            subtitle:
+                                'Relatórios arquivados ficam aqui, fora dos '
+                                'indicadores, e voltam a contar assim que '
+                                'forem desarquivados.',
+                          ),
+                        ),
+                      ],
                     )
                   else ...[
                     _buildFiltros(),
@@ -673,6 +778,7 @@ class _RecentInspection {
   final double? complianceRate;
   final int nonCompliant;
   final bool temFoto;
+  final bool arquivado;
 
   _RecentInspection({
     required this.id,
@@ -684,6 +790,7 @@ class _RecentInspection {
     this.complianceRate,
     this.nonCompliant = 0,
     this.temFoto = false,
+    this.arquivado = false,
   });
 }
 

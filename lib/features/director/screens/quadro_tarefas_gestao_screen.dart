@@ -120,7 +120,7 @@ class _QuadroTarefasGestaoScreenState
           })
           // Tarefa de checklist arquivado sai do quadro de gestao (bloco 1).
           // O registro continua no banco e no historico.
-          .where((tv) => !(tv.checklist?.isArchived ?? false))
+          .where((tv) => !(tv.checklist?.isDeleted ?? false))
           .toList();
 
       if (mounted) {

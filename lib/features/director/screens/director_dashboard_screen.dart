@@ -65,13 +65,11 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
           .eq('id', hospitalId)
           .maybeSingle();
 
-      // Checklists arquivados ficam FORA de todo indicador (bloco 1).
-      // `reports` não tem checklist_id, então a exclusão passa pelas
-      // inspeções — e `tasks`, que tem, é filtrada direto por checklist.
-      final archivedChecklists =
-          await ArchiveService.archivedChecklistIds(hospitalId);
+      // Relatórios arquivados ficam FORA de todo indicador. Quem alimenta
+      // gráfico e taxa é a inspeção, então é ela que se exclui — não o
+      // checklist, que agora tem exclusão em vez de arquivamento.
       final archivedInspections =
-          await ArchiveService.inspectionIdsDeArquivados(hospitalId);
+          await ArchiveService.archivedInspectionIds(hospitalId);
 
       var reportsQuery = _db
           .from('reports')
@@ -105,8 +103,8 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
           .eq('hospital_id', hospitalId)
           .gte('submitted_at', '${todayStr}T00:00:00')
           .lt('submitted_at', '${todayStr}T23:59:59');
-      if (archivedChecklists.isNotEmpty) {
-        todayQuery = todayQuery.not('checklist_id', 'in', archivedChecklists);
+      if (archivedInspections.isNotEmpty) {
+        todayQuery = todayQuery.not('id', 'in', archivedInspections);
       }
       final inspToday = await todayQuery;
 
@@ -115,8 +113,8 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
           .select('id')
           .eq('hospital_id', hospitalId)
           .neq('overall_status', 'validated');
-      if (archivedChecklists.isNotEmpty) {
-        openQuery = openQuery.not('checklist_id', 'in', archivedChecklists);
+      if (archivedInspections.isNotEmpty) {
+        openQuery = openQuery.not('id', 'in', archivedInspections);
       }
       final openInspections = await openQuery;
 
@@ -131,14 +129,18 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
         ncCount = ncs.length;
       }
 
+      // Tarefa de checklist EXCLUÍDO some do painel: ele não recebe
+      // tarefa nova e as pendentes deixam de cobrar o setor.
+      final deletedChecklists =
+          await ArchiveService.deletedChecklistIds(hospitalId);
       var pendingQuery = _db
           .from('tasks')
           .select('sector_id')
           .eq('hospital_id', hospitalId)
           .inFilter('status', ['pending', 'in_progress']);
-      if (archivedChecklists.isNotEmpty) {
+      if (deletedChecklists.isNotEmpty) {
         pendingQuery =
-            pendingQuery.not('checklist_id', 'in', archivedChecklists);
+            pendingQuery.not('checklist_id', 'in', deletedChecklists);
       }
       final pendingTasks = await pendingQuery;
 

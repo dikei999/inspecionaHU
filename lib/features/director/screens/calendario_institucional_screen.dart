@@ -54,7 +54,7 @@ class _CalendarioInstitucionalScreenState
     try {
       final data = await _db
           .from('tasks')
-          .select('*, checklists(archived_at)')
+          .select('*, checklists(deleted_at)')
           .eq('hospital_id', hospitalId)
           // Tarefa cancelada (serie interrompida) sai das listas.
           .neq('status', 'cancelled')
@@ -63,8 +63,8 @@ class _CalendarioInstitucionalScreenState
 
       final map = <String, List<Task>>{};
       for (final t in data) {
-        // Checklist arquivado nao aparece no calendario (bloco 1).
-        if ((t['checklists'] as Map<String, dynamic>?)?['archived_at'] !=
+        // Checklist EXCLUIDO nao aparece no calendario.
+        if ((t['checklists'] as Map<String, dynamic>?)?['deleted_at'] !=
             null) {
           continue;
         }

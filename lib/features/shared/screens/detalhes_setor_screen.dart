@@ -9,6 +9,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/checklist.dart';
 import '../../../core/services/archive_service.dart';
+import '../../../widgets/confirm_dialog.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/models/sector.dart';
 import '../../../core/models/task.dart';
@@ -479,8 +480,9 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
   bool _loading = true;
   List<Checklist> _checklists = [];
 
-  /// Filtro "Arquivados": false = lista de trabalho (padrão),
-  /// true = só os arquivados. Nada é deletado — é só uma visão.
+  /// Filtro "Excluídos": false = lista de trabalho (padrão), true = só os
+  /// excluídos. Exclusão é SOFT DELETE — a linha continua no banco e as
+  /// inspeções feitas por esse checklist seguem íntegras.
   bool _verArquivados = false;
 
   /// Resumo das tarefas de cada checklist: quantas em aberto e o próximo
@@ -505,7 +507,7 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
           .order('title', ascending: true);
       final todos = (data as List).map((e) => Checklist.fromJson(e)).toList();
       final visiveis =
-          todos.where((c) => c.isArchived == _verArquivados).toList();
+          todos.where((c) => c.isDeleted == _verArquivados).toList();
 
       // Uma consulta em lote para todos os checklists da aba.
       final resumo = <String, ({int abertas, DateTime? proximoPrazo})>{};
@@ -547,40 +549,34 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
     }
   }
 
-  Future<void> _toggleArquivar(Checklist checklist) async {
+  /// Exclui (soft delete) ou restaura um checklist.
+  ///
+  /// Nunca faz DELETE: a linha permanece no banco. O checklist sai das
+  /// listas e não recebe tarefa nova, mas os relatórios já gerados por ele
+  /// continuam existindo e contando nos indicadores — quem sai do gráfico
+  /// é o relatório arquivado, não o formulário.
+  Future<void> _toggleExcluir(Checklist checklist) async {
     final auth = context.read<AuthProvider>();
-    final arquivar = !checklist.isArchived;
+    final excluir = !checklist.isDeleted;
 
-    if (arquivar) {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Arquivar checklist?'),
-          content: Text(
-            '"${checklist.title}" sai das listas de trabalho e deixa de contar '
-            'na taxa de conformidade e nos gráficos.\n\n'
-            'As inspeções já respondidas continuam salvas e acessíveis pelo '
-            'filtro "Arquivados". Nada é apagado e você pode desarquivar '
-            'quando quiser.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Arquivar'),
-            ),
-          ],
-        ),
+    if (excluir) {
+      final ok = await confirmAction(
+        context,
+        title: 'Excluir checklist?',
+        message: '"${checklist.title}" sai das listas e não poderá mais '
+            'receber tarefas novas.\n\n'
+            'As inspeções já respondidas continuam íntegras e os relatórios '
+            'gerados por ele seguem valendo. Nada é apagado do banco e você '
+            'pode restaurar depois.',
+        confirmLabel: 'Excluir',
+        icon: Icons.delete_outline,
       );
-      if (confirm != true || !mounted) return;
+      if (!ok || !mounted) return;
     }
 
-    final erro = await ArchiveService.setArchived(
+    final erro = await ArchiveService.setChecklistDeleted(
       checklistId: checklist.id,
-      archive: arquivar,
+      deleted: excluir,
       userId: auth.profile!.id,
       hospitalId: auth.profile!.hospitalId,
       title: checklist.title,
@@ -591,9 +587,9 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
       _showSnack(erro, error: true);
       return;
     }
-    _showSnack(arquivar
-        ? 'Checklist arquivado. Fora dos indicadores.'
-        : 'Checklist desarquivado. De volta à operação.');
+    _showSnack(excluir
+        ? 'Checklist excluído. As inspeções antigas continuam.'
+        : 'Checklist restaurado. De volta à operação.');
     _load();
   }
 
@@ -702,8 +698,8 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
                     icon: Icon(Icons.play_circle_outline, size: 18)),
                 ButtonSegment(
                     value: true,
-                    label: Text('Arquivados'),
-                    icon: Icon(Icons.inventory_2_outlined, size: 18)),
+                    label: Text('Excluídos'),
+                    icon: Icon(Icons.delete_outline, size: 18)),
               ],
               selected: {_verArquivados},
               showSelectedIcon: false,
@@ -727,15 +723,15 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
               child: _checklists.isEmpty
                   ? EmptyState(
                       icon: _verArquivados
-                          ? Icons.inventory_2_outlined
+                          ? Icons.delete_outline
                           : Icons.checklist_outlined,
                       title: _verArquivados
-                          ? 'Nenhum checklist arquivado'
+                          ? 'Nenhum checklist excluído'
                           : 'Nenhum checklist neste setor',
                       subtitle: _verArquivados
-                          ? 'Checklists arquivados ficam aqui, fora dos '
-                              'indicadores, e podem voltar à operação a '
-                              'qualquer momento.'
+                          ? 'Checklists excluídos ficam aqui e podem ser '
+                              'restaurados a qualquer momento. As inspeções '
+                              'feitas por eles continuam íntegras.'
                           : widget.canEdit
                               ? 'Crie um checklist para começar a atribuir tarefas aqui.'
                               : 'Este setor ainda não tem checklists ativos.',
@@ -756,20 +752,20 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
                         return Card(
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: c.isArchived
+                              backgroundColor: c.isDeleted
                                   ? AppColors.border
                                   : AppColors.primary50,
                               child: Icon(
-                                  c.isArchived
-                                      ? Icons.inventory_2_outlined
+                                  c.isDeleted
+                                      ? Icons.delete_outline
                                       : Icons.checklist_outlined,
-                                  color: c.isArchived
+                                  color: c.isDeleted
                                       ? AppColors.textSecondary
                                       : AppColors.primary),
                             ),
                             title: Text(c.title),
-                            subtitle: Text(c.isArchived
-                                ? '${_resumoLabel(c)} • Arquivado'
+                            subtitle: Text(c.isDeleted
+                                ? '${_resumoLabel(c)} • Excluído'
                                 : _resumoLabel(c)),
                             trailing: widget.canEdit
                                 ? PopupMenuButton<String>(
@@ -780,24 +776,23 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
                                             AppRoutes.editarChecklist(c.id));
                                         _load();
                                       }
-                                      if (v == 'archive' ||
-                                          v == 'unarchive') {
-                                        _toggleArquivar(c);
+                                      if (v == 'delete' ||
+                                          v == 'restore') {
+                                        _toggleExcluir(c);
                                       }
                                       if (v == 'disable') _desativar(c);
                                     },
-                                    itemBuilder: (_) => c.isArchived
+                                    itemBuilder: (_) => c.isDeleted
                                         ? const [
                                             PopupMenuItem(
-                                              value: 'unarchive',
+                                              value: 'restore',
                                               child: ListTile(
                                                 contentPadding:
                                                     EdgeInsets.zero,
                                                 dense: true,
                                                 leading: Icon(
-                                                    Icons.unarchive_outlined),
-                                                title: Text(
-                                                    'Voltar à operação'),
+                                                    Icons.restore_outlined),
+                                                title: Text('Restaurar'),
                                               ),
                                             ),
                                           ]
@@ -814,16 +809,16 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
                                               ),
                                             ),
                                             PopupMenuItem(
-                                              value: 'archive',
+                                              value: 'delete',
                                               child: ListTile(
                                                 contentPadding:
                                                     EdgeInsets.zero,
                                                 dense: true,
-                                                leading: Icon(Icons
-                                                    .inventory_2_outlined),
-                                                title: Text('Arquivar'),
+                                                leading:
+                                                    Icon(Icons.delete_outline),
+                                                title: Text('Excluir'),
                                                 subtitle: Text(
-                                                    'Sai dos indicadores'),
+                                                    'Mantém as inspeções'),
                                               ),
                                             ),
                                             PopupMenuItem(

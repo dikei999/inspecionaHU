@@ -14,6 +14,11 @@ class Inspection {
   final DateTime? validatedAt;
   final DateTime createdAt;
 
+  /// Relatorio arquivado: sai de TODOS os indicadores e passa a aparecer
+  /// so no filtro "Arquivados". Reversivel, nada e deletado.
+  final DateTime? archivedAt;
+  final String? archivedBy;
+
   const Inspection({
     required this.id,
     required this.taskId,
@@ -29,6 +34,8 @@ class Inspection {
     this.validatedBy,
     this.validatedAt,
     required this.createdAt,
+    this.archivedAt,
+    this.archivedBy,
   });
 
   factory Inspection.fromJson(Map<String, dynamic> json) => Inspection(
@@ -54,6 +61,10 @@ class Inspection {
             ? DateTime.parse(json['validated_at'] as String)
             : null,
         createdAt: DateTime.parse(json['created_at'] as String),
+        archivedAt: json['archived_at'] != null
+            ? DateTime.parse(json['archived_at'] as String)
+            : null,
+        archivedBy: json['archived_by'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -71,7 +82,12 @@ class Inspection {
         'validated_by': validatedBy,
         'validated_at': validatedAt?.toIso8601String(),
         'created_at': createdAt.toIso8601String(),
+        'archived_at': archivedAt?.toIso8601String(),
+        'archived_by': archivedBy,
       };
+
+  /// Arquivado: fora de todo indicador, mas preservado.
+  bool get isArchived => archivedAt != null;
 
   bool get isDraft => overallStatus == 'draft';
   bool get isSubmitted => overallStatus == 'submitted';

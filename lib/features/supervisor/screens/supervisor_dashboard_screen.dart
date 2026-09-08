@@ -89,10 +89,8 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
         return;
       }
 
-      // Checklists arquivados ficam FORA de todo indicador (bloco 1).
-      final archivedChecklists =
-          await ArchiveService.archivedChecklistIds(hospitalId);
-      final archivedInspections = await ArchiveService.inspectionIdsDeArquivados(
+      // Relatórios arquivados ficam FORA de todo indicador.
+      final archivedInspections = await ArchiveService.archivedInspectionIds(
           hospitalId,
           sectorIds: sectorIds);
 
@@ -130,8 +128,8 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           .inFilter('sector_id', sectorIds)
           .gte('submitted_at', '${todayStr}T00:00:00')
           .lt('submitted_at', '${todayStr}T23:59:59');
-      if (archivedChecklists.isNotEmpty) {
-        todayQuery = todayQuery.not('checklist_id', 'in', archivedChecklists);
+      if (archivedInspections.isNotEmpty) {
+        todayQuery = todayQuery.not('id', 'in', archivedInspections);
       }
       final inspToday = await todayQuery;
 
@@ -141,8 +139,8 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
           .eq('hospital_id', hospitalId)
           .inFilter('sector_id', sectorIds)
           .neq('overall_status', 'validated');
-      if (archivedChecklists.isNotEmpty) {
-        openQuery = openQuery.not('checklist_id', 'in', archivedChecklists);
+      if (archivedInspections.isNotEmpty) {
+        openQuery = openQuery.not('id', 'in', archivedInspections);
       }
       final openInspections = await openQuery;
 
@@ -157,15 +155,18 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
         ncCount = ncs.length;
       }
 
+      // Tarefa de checklist EXCLUÍDO some do painel.
+      final deletedChecklists =
+          await ArchiveService.deletedChecklistIds(hospitalId);
       var pendingQuery = _db
           .from('tasks')
           .select('sector_id')
           .eq('hospital_id', hospitalId)
           .inFilter('sector_id', sectorIds)
           .inFilter('status', ['pending', 'in_progress']);
-      if (archivedChecklists.isNotEmpty) {
+      if (deletedChecklists.isNotEmpty) {
         pendingQuery =
-            pendingQuery.not('checklist_id', 'in', archivedChecklists);
+            pendingQuery.not('checklist_id', 'in', deletedChecklists);
       }
       final pendingTasks = await pendingQuery;
 

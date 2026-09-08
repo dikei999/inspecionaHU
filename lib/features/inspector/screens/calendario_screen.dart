@@ -72,7 +72,7 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
     try {
       final data = await _db
           .from('tasks')
-          .select('*, checklists(archived_at)')
+          .select('*, checklists(deleted_at)')
           .eq('inspector_id', uid)
           // Tarefa cancelada (serie interrompida) sai das listas.
           .neq('status', 'cancelled')
@@ -81,10 +81,10 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
       if (mounted) {
         setState(() {
           _tasks = (data as List)
-              // Checklist arquivado nao aparece no calendario (bloco 1).
+              // Checklist EXCLUIDO nao aparece no calendario.
               .where((e) =>
                   ((e as Map<String, dynamic>)['checklists']
-                      as Map<String, dynamic>?)?['archived_at'] ==
+                      as Map<String, dynamic>?)?['deleted_at'] ==
                   null)
               .map((e) => Task.fromJson(e as Map<String, dynamic>))
               .toList();

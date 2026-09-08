@@ -9,6 +9,7 @@ import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/checklist_item.dart';
 import '../../../core/models/inspection.dart';
 import '../../../core/models/inspection_response.dart';
+import '../../../core/services/archive_service.dart';
 import '../../../core/services/audit_service.dart';
 import '../../../core/services/report_export_service.dart';
 import '../../../widgets/charts.dart';
@@ -47,6 +48,53 @@ class _RelatorioIndividualScreenState
   /// Validar é exclusivo do Diretor (regra de perfis).
   bool get _podeValidar =>
       context.read<AuthProvider>().profile?.role == 'director';
+
+  /// Arquivar o relatório: Diretor e Supervisor. O escopo do Supervisor
+  /// vem da RLS de inspections, que limita o UPDATE aos setores dele.
+  bool get _podeArquivar {
+    final role = context.read<AuthProvider>().profile?.role;
+    return role == 'director' || role == 'supervisor';
+  }
+
+  Future<void> _toggleArquivar() async {
+    final inspection = _inspection;
+    final profile = context.read<AuthProvider>().profile;
+    if (inspection == null || profile == null) return;
+    final arquivar = !inspection.isArchived;
+
+    if (arquivar) {
+      final ok = await confirmAction(
+        context,
+        title: 'Arquivar relatório?',
+        message: 'Este relatório sai da taxa de conformidade, dos gráficos '
+            'e de todos os indicadores.\n\nEle continua salvo e acessível '
+            'pelo filtro "Arquivados". Nada é apagado.',
+        confirmLabel: 'Arquivar',
+        icon: Icons.inventory_2_outlined,
+      );
+      if (!ok || !mounted) return;
+    }
+
+    final erro = await ArchiveService.setInspectionArchived(
+      inspectionId: inspection.id,
+      archive: arquivar,
+      userId: profile.id,
+      hospitalId: inspection.hospitalId,
+      descricao: _checklistTitle,
+    );
+
+    if (!mounted) return;
+    if (erro != null) {
+      showActionFeedback(context, erro, error: true);
+      return;
+    }
+    showActionFeedback(
+        context,
+        arquivar
+            ? 'Relatório arquivado. Fora dos indicadores.'
+            : 'Relatório desarquivado. De volta aos indicadores.');
+    await _load();
+  }
 
   int get _compliant =>
       _responses.where((r) => r.status == 'C').length;
@@ -358,6 +406,16 @@ class _RelatorioIndividualScreenState
                     child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.table_view_outlined),
           ),
+          if (_podeArquivar)
+            IconButton(
+              icon: Icon(inspection.isArchived
+                  ? Icons.unarchive_outlined
+                  : Icons.inventory_2_outlined),
+              tooltip: inspection.isArchived
+                  ? 'Desarquivar — volta aos indicadores'
+                  : 'Arquivar — sai dos indicadores',
+              onPressed: _toggleArquivar,
+            ),
           // Só o Diretor valida (CLAUDE.md — Supervisor não valida).
           // O Supervisor chega nesta tela pelos setores compartilhados e
           // via Relatórios & Análises: sem este gate ele via um botão que
