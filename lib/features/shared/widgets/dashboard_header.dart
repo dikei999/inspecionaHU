@@ -3,10 +3,28 @@ import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 import '../../../core/constants/app_colors.dart';
 
-/// Cabeçalho institucional dos dashboards: bloco azul flat com canto
-/// inferior arredondado (24px), saudação em Sora branco, ações em branco
-/// e espaço para indicadores em versão clara. A linha fina verde na base
-/// é o ÚNICO uso decorativo do verde da marca.
+/// Gradiente institucional do cabeçalho — fonte ÚNICA para todos os
+/// cabeçalhos azuis do app.
+///
+/// Vai do primary (#00448E) ao primary800, dois tons da escala tonal que
+/// já existe em AppColors: nenhuma cor nova foi criada. A variação é
+/// deliberadamente curta e na diagonal, para dar profundidade sem virar
+/// efeito. O tom mais escuro fica embaixo, onde o texto branco não passa,
+/// então o contraste do conteúdo continua o mesmo de antes — o topo, onde
+/// ficam saudação e ações, permanece exatamente no primary.
+const BoxDecoration kHeaderGradient = BoxDecoration(
+  gradient: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [AppColors.primary, AppColors.primary800],
+    stops: [0.0, 1.0],
+  ),
+);
+
+/// Cabeçalho institucional dos dashboards: bloco azul em gradiente sutil
+/// com canto inferior arredondado (24px), saudação em Sora branco, ações em
+/// branco e espaço para indicadores em versão clara. A linha fina verde na
+/// base é o ÚNICO uso decorativo do verde da marca.
 class DashboardHeader extends StatelessWidget {
   final String greeting;
   final String? subtitle;
@@ -31,7 +49,7 @@ class DashboardHeader extends StatelessWidget {
         borderRadius:
             const BorderRadius.vertical(bottom: Radius.circular(24)),
       child: Container(
-        color: AppColors.primary,
+        decoration: kHeaderGradient,
         child: SafeArea(
           bottom: false,
           child: Column(
