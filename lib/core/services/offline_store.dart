@@ -66,6 +66,67 @@ class OfflineStore {
     }
   }
 
+  /// Perfil em cache SEM exigir o id do usuário.
+  ///
+  /// Necessário quando `currentSession` volta nulo: o access token expirou e
+  /// a renovação falhou sem rede, então não há uid para consultar. Devolve
+  /// o par (userId, perfil) do último login bem-sucedido neste aparelho.
+  static Future<({String userId, Map<String, dynamic> profile})?>
+      loadAnyProfile() async {
+    try {
+      final d = await _dir('.');
+      final f = File('${d.path}/profile.json');
+      if (!await f.exists()) return null;
+      final map = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+      final uid = map['user_id'] as String?;
+      final perfil = map['profile'] as Map<String, dynamic>?;
+      if (uid == null || perfil == null) return null;
+      return (userId: uid, profile: perfil);
+    } catch (e) {
+      debugPrint('[OfflineStore] loadAnyProfile: $e');
+      return null;
+    }
+  }
+
+  // ── Marca de saída explícita ────────────────────────────────────────────
+  // Distingue "o usuário saiu" de "a renovação do token falhou sem rede".
+  // Sem essa marca, um token expirado seria indistinguível de um logout e o
+  // app voltaria para a tela de login em campo.
+
+  static Future<void> markSignedOut() async {
+    try {
+      final d = await _dir('.');
+      await File('${d.path}/signed_out.flag').writeAsString(
+        DateTime.now().toIso8601String(),
+      );
+    } catch (e) {
+      debugPrint('[OfflineStore] markSignedOut: $e');
+    }
+  }
+
+  static Future<void> clearSignedOut() async {
+    try {
+      final d = await _dir('.');
+      final f = File('${d.path}/signed_out.flag');
+      if (await f.exists()) await f.delete();
+    } catch (e) {
+      debugPrint('[OfflineStore] clearSignedOut: $e');
+    }
+  }
+
+  /// true = o usuário saiu de propósito. false = nunca saiu, ou entrou de novo.
+  static Future<bool> isSignedOut() async {
+    try {
+      final d = await _dir('.');
+      return File('${d.path}/signed_out.flag').exists();
+    } catch (e) {
+      debugPrint('[OfflineStore] isSignedOut: $e');
+      // Na dúvida NÃO bloqueia a entrada offline: prender o Inspetor fora do
+      // app em campo é pior que abrir com perfil em cache.
+      return false;
+    }
+  }
+
   static Future<void> clearProfile() async {
     try {
       final d = await _dir('.');

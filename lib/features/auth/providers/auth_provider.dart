@@ -19,6 +19,10 @@ class AuthProvider extends ChangeNotifier {
   /// A UI usa para mostrar a faixa de status; o app funciona normalmente.
   bool _offlineMode = false;
 
+  /// true só durante um signOut() explícito. É o que separa "o usuário saiu"
+  /// de "a renovação do token falhou sem rede" no listener de auth.
+  bool _signingOut = false;
+
   AuthStatus get status => _status;
   Profile? get profile => _profile;
   bool get offlineMode => _offlineMode;
@@ -33,6 +37,11 @@ class AuthProvider extends ChangeNotifier {
     final session = _supabase.auth.currentSession;
     if (session != null) {
       await _loadProfile();
+    } else if (await _tentarEntrarOffline()) {
+      // Sessão nula NÃO significa que o usuário saiu: o access token dura
+      // 1h e, sem rede, a renovação falha e o supabase_flutter descarta a
+      // sessão. Era por isso que fechar o app em modo avião levava de volta
+      // ao login. Havendo perfil em cache e nenhuma saída explícita, entra.
     } else {
       _status = AuthStatus.unauthenticated;
       notifyListeners();
@@ -47,11 +56,63 @@ class AuthProvider extends ChangeNotifier {
         if (_insertingProfile) return;
         await _loadProfile();
       } else if (event == AuthChangeEvent.signedOut) {
+        // signedOut também é emitido quando a renovação do token falha.
+        // Só derruba a sessão se o usuário REALMENTE tocou em Sair; caso
+        // contrário tenta seguir offline com o perfil em cache.
+        if (_signingOut) {
+          _profile = null;
+          _offlineMode = false;
+          _status = AuthStatus.unauthenticated;
+          notifyListeners();
+          return;
+        }
+        if (await _tentarEntrarOffline()) return;
         _profile = null;
+        _offlineMode = false;
         _status = AuthStatus.unauthenticated;
         notifyListeners();
       }
     });
+  }
+
+  /// Entra com o perfil em cache quando não há sessão utilizável.
+  ///
+  /// Só acontece se o usuário NÃO saiu de propósito: a marca de saída é
+  /// gravada apenas em signOut() e apagada em todo login bem-sucedido.
+  /// Retorna true se conseguiu entrar em modo offline.
+  Future<bool> _tentarEntrarOffline() async {
+    if (await OfflineStore.isSignedOut()) return false;
+
+    final cache = await OfflineStore.loadAnyProfile();
+    if (cache == null) return false;
+
+    _profile = Profile.fromJson(cache.profile);
+    _status = AuthStatus.authenticated;
+    _offlineMode = true;
+    debugPrint('[AuthProvider] modo offline com perfil em cache');
+    notifyListeners();
+    return true;
+  }
+
+  /// Volta ao normal quando a rede retorna: tenta renovar a sessão e, dando
+  /// certo, recarrega o perfil do servidor e sai do modo offline sozinho.
+  Future<void> tentarSairDoModoOffline() async {
+    if (!_offlineMode) return;
+
+    try {
+      if (_supabase.auth.currentSession == null) {
+        // Sessão descartada: só um refresh explícito a traz de volta, usando
+        // o refresh token que o supabase_flutter persistiu.
+        await _supabase.auth.refreshSession();
+      }
+      if (_supabase.auth.currentSession != null) {
+        await _loadProfile();
+      }
+    } catch (e) {
+      // Ainda sem rede, ou refresh token expirado. Continua offline: quem
+      // decide derrubar a sessão é o usuário, não uma falha de rede.
+      debugPrint('[AuthProvider] tentarSairDoModoOffline: $e');
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -73,9 +134,11 @@ class AuthProvider extends ChangeNotifier {
       _status = AuthStatus.authenticated;
       _offlineMode = false;
 
-      // Guarda o perfil para a próxima abertura sem rede (6.1).
+      // Guarda o perfil para a próxima abertura sem rede (6.1) e limpa a
+      // marca de saída: a partir daqui, sessão perdida = falha de rede.
       if (data != null) {
         await OfflineStore.saveProfile(uid, data);
+        await OfflineStore.clearSignedOut();
       }
     } catch (e) {
       debugPrint('[_loadProfile] erro: $e');
@@ -103,9 +166,11 @@ class AuthProvider extends ChangeNotifier {
 
   /// Tenta trocar o perfil em cache pelo do servidor quando a rede volta.
   /// Silencioso: se ainda não houver rede, continua em modo offline.
+  /// Passa por tentarSairDoModoOffline() porque a sessão pode ter sido
+  /// descartada junto com o token expirado e precisa ser renovada antes.
   Future<void> revalidateProfileIfOffline() async {
     if (!_offlineMode) return;
-    await _loadProfile();
+    await tentarSairDoModoOffline();
   }
 
   /// Retorna null em caso de sucesso ou mensagem de erro.
@@ -232,15 +297,29 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    await _supabase.auth.signOut();
-    // Sair limpa o cache e os dados de trabalho: o próximo usuário deste
-    // aparelho não pode herdar perfil nem fila de envio de outro.
-    await OfflineStore.clearProfile();
-    await OfflineStore.clearWorkData();
-    _profile = null;
-    _offlineMode = false;
-    _status = AuthStatus.unauthenticated;
-    notifyListeners();
+    _signingOut = true;
+    try {
+      // Marca a saída ANTES de derrubar a sessão: se o app for fechado no
+      // meio, a próxima abertura sabe que foi saída de verdade e não
+      // reabre em modo offline.
+      await OfflineStore.markSignedOut();
+      try {
+        await _supabase.auth.signOut();
+      } catch (e) {
+        // Sair sem rede falha no servidor, mas localmente tem de valer.
+        debugPrint('[signOut] erro no servidor (ignorado): $e');
+      }
+      // Sair limpa o cache e os dados de trabalho: o próximo usuário deste
+      // aparelho não pode herdar perfil nem fila de envio de outro.
+      await OfflineStore.clearProfile();
+      await OfflineStore.clearWorkData();
+      _profile = null;
+      _offlineMode = false;
+      _status = AuthStatus.unauthenticated;
+      notifyListeners();
+    } finally {
+      _signingOut = false;
+    }
   }
 
   /// Recarrega o perfil — útil quando role é atribuído externamente.
