@@ -7,8 +7,15 @@ class Task {
   final String inspectorId;
   final String assignedBy;
   final DateTime dueDate;
-  final String status; // pending | in_progress | submitted | validated
+  final String status; // pending | in_progress | submitted | validated | cancelled
   final DateTime createdAt;
+
+  /// Série recorrente: tarefas criadas na mesma atribuição compartilham o
+  /// series_id. NULL = tarefa avulsa. Não há agendamento no servidor — as
+  /// ocorrencias sao todas criadas no ato da atribuicao.
+  final String? seriesId;
+  final int? seriesIndex;
+  final int? seriesTotal;
 
   const Task({
     required this.id,
@@ -21,6 +28,9 @@ class Task {
     required this.dueDate,
     required this.status,
     required this.createdAt,
+    this.seriesId,
+    this.seriesIndex,
+    this.seriesTotal,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) => Task(
@@ -34,6 +44,9 @@ class Task {
         dueDate: DateTime.parse(json['due_date'] as String),
         status: json['status'] as String,
         createdAt: DateTime.parse(json['created_at'] as String),
+        seriesId: json['series_id'] as String?,
+        seriesIndex: (json['series_index'] as num?)?.toInt(),
+        seriesTotal: (json['series_total'] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -47,6 +60,9 @@ class Task {
         'due_date': dueDate.toIso8601String(),
         'status': status,
         'created_at': createdAt.toIso8601String(),
+        'series_id': seriesId,
+        'series_index': seriesIndex,
+        'series_total': seriesTotal,
       };
 
   /// Rótulo curto da tarefa — usa o código de OS quando disponível;
@@ -61,5 +77,19 @@ class Task {
   bool get isOverdue =>
       dueDate.isBefore(DateTime.now()) &&
       status != 'submitted' &&
-      status != 'validated';
+      status != 'validated' &&
+      status != 'cancelled';
+
+  /// Pertence a uma série recorrente.
+  bool get isRecorrente => seriesId != null && seriesTotal != null;
+
+  /// Rótulo de posição na série, ex.: "3 de 14". Null se avulsa.
+  String? get seriesLabel =>
+      isRecorrente ? '$seriesIndex de $seriesTotal' : null;
+
+  /// Cancelada não aparece em lista de trabalho nem conta como pendência.
+  bool get isCancelled => status == 'cancelled';
+
+  /// Já respondida: não pode ser cancelada junto com a série.
+  bool get isRespondida => status == 'submitted' || status == 'validated';
 }

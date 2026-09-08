@@ -857,6 +857,8 @@ class _TarefasTabState extends State<_TarefasTab> {
           .from('tasks')
           .select()
           .eq('sector_id', widget.sectorId)
+          // Tarefa cancelada (serie interrompida) sai das listas.
+          .neq('status', 'cancelled')
           .order('due_date', ascending: false);
 
       final tasks = (tasksData as List)

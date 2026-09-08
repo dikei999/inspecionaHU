@@ -14,6 +14,8 @@ import '../../../widgets/empty_state.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../../widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../core/services/audit_service.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 class QuadroTarefasGestaoScreen extends StatefulWidget {
   const QuadroTarefasGestaoScreen({super.key});
@@ -59,6 +61,8 @@ class _QuadroTarefasGestaoScreenState
           .from('tasks')
           .select()
           .eq('hospital_id', hospitalId)
+          // Tarefa cancelada (serie interrompida) sai das listas.
+          .neq('status', 'cancelled')
           .order('due_date', ascending: true);
 
       final setoresData = await _db
@@ -154,6 +158,98 @@ class _QuadroTarefasGestaoScreenState
     });
   }
 
+  /// Cancela a série: só as ocorrências FUTURAS ainda não respondidas.
+  ///
+  /// Soft delete — as linhas continuam na tabela com status 'cancelled'.
+  /// O que já foi enviado ou validado permanece intacto, e a ocorrência de
+  /// hoje também: cancelar não pode apagar trabalho do dia corrente.
+  Future<void> _cancelarSerie(_TaskView tv) async {
+    final seriesId = tv.task.seriesId;
+    if (seriesId == null) return;
+
+    // Lido antes de qualquer await: depois o context pode nao valer mais.
+    final profile = context.read<AuthProvider>().profile!;
+
+    final hoje = DateTime.now();
+    final corte = DateTime(hoje.year, hoje.month, hoje.day)
+        .toIso8601String()
+        .substring(0, 10);
+
+    // Quantas seriam afetadas — o Diretor confirma sabendo o número.
+    int futuras;
+    try {
+      final rows = await _db
+          .from('tasks')
+          .select('id')
+          .eq('series_id', seriesId)
+          .inFilter('status', ['pending', 'in_progress']).gt('due_date', corte);
+      futuras = (rows as List).length;
+    } catch (e) {
+      debugPrint('[QuadroGestao] _cancelarSerie contagem: $e');
+      if (mounted) {
+        showActionFeedback(
+            context, 'Erro ao consultar a série. Tente novamente.',
+            error: true);
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (futuras == 0) {
+      showActionFeedback(
+        context,
+        'Não há ocorrências futuras pendentes nesta série para cancelar.',
+      );
+      return;
+    }
+
+    final ok = await confirmAction(
+      context,
+      title: 'Cancelar série?',
+      message: '$futuras ocorrência(s) futura(s) ainda não respondida(s) '
+          'serão canceladas.\n\nAs já enviadas ou validadas, e a de hoje, '
+          'não são afetadas. Nada é apagado — as tarefas ficam registradas '
+          'como canceladas.',
+      confirmLabel: 'Cancelar série',
+      cancelLabel: 'Manter',
+      icon: Icons.event_busy_outlined,
+    );
+    if (!ok || !mounted) return;
+
+    try {
+      await _db
+          .from('tasks')
+          .update({'status': 'cancelled'})
+          .eq('series_id', seriesId)
+          .inFilter('status', ['pending', 'in_progress']).gt('due_date', corte);
+
+      await AuditService.log(
+        userId: profile.id,
+        hospitalId: profile.hospitalId,
+        action: 'cancelar_serie_tarefas',
+        entityType: 'task',
+        entityId: tv.task.id,
+        details: {
+          'series_id': seriesId,
+          'canceladas': futuras,
+          'a_partir_de': corte,
+        },
+      );
+
+      if (mounted) {
+        showActionFeedback(
+            context, '$futuras ocorrência(s) futura(s) cancelada(s).');
+        _load();
+      }
+    } catch (e) {
+      debugPrint('[QuadroGestao] _cancelarSerie: $e');
+      if (mounted) {
+        showActionFeedback(context, 'Erro ao cancelar a série.', error: true);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('dd/MM/yy');
@@ -246,17 +342,80 @@ class _QuadroTarefasGestaoScreenState
                                     ],
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    task.displayCode,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: AppColors.textSecondary,
-                                          fontFeatures: const [
-                                            FontFeature.tabularFigures()
-                                          ],
+                                  Row(
+                                    children: [
+                                      Text(
+                                        task.displayCode,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color: AppColors.textSecondary,
+                                              fontFeatures: const [
+                                                FontFeature.tabularFigures()
+                                              ],
+                                            ),
+                                      ),
+                                      // Posição na série recorrente.
+                                      if (task.seriesLabel != null) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary50,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                  Icons
+                                                      .event_repeat_outlined,
+                                                  size: 10,
+                                                  color: AppColors.primary),
+                                              const SizedBox(width: 3),
+                                              Text(
+                                                task.seriesLabel!,
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight:
+                                                      FontWeight.w600,
+                                                  color: AppColors.primary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
+                                        const Spacer(),
+                                        // Cancela SÓ as ocorrências futuras
+                                        // ainda não respondidas.
+                                        TextButton.icon(
+                                          onPressed: () =>
+                                              _cancelarSerie(tv),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor:
+                                                AppColors.textSecondary,
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 6),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize:
+                                                MaterialTapTargetSize
+                                                    .shrinkWrap,
+                                            textStyle: const TextStyle(
+                                                fontSize: 11),
+                                          ),
+                                          icon: const Icon(
+                                              Icons.event_busy_outlined,
+                                              size: 14),
+                                          label: const Text('Cancelar série'),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                   const SizedBox(height: 4),
                                   Text(

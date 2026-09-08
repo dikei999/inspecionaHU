@@ -74,6 +74,8 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
           .from('tasks')
           .select('*, checklists(archived_at)')
           .eq('inspector_id', uid)
+          // Tarefa cancelada (serie interrompida) sai das listas.
+          .neq('status', 'cancelled')
           .order('due_date', ascending: true);
 
       if (mounted) {

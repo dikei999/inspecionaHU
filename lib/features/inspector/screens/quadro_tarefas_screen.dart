@@ -566,14 +566,49 @@ class _TaskCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        task.displayCode,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures()
-                              ],
+                      Row(
+                        children: [
+                          Text(
+                            task.displayCode,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
+                                ),
+                          ),
+                          // Posicao na serie recorrente, ex.: "3 de 14".
+                          if (task.seriesLabel != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.event_repeat_outlined,
+                                      size: 10, color: AppColors.primary),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    task.seriesLabel!,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Row(

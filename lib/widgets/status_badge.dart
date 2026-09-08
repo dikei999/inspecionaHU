@@ -19,6 +19,10 @@ class StatusBadge extends StatelessWidget {
     'overdue': ('Atrasada', AppColors.statusOverdue, Icons.warning_amber_rounded),
     'active': ('Ativo', AppColors.compliant, Icons.check_circle_outline),
     'inactive': ('Inativo', AppColors.textSecondary, Icons.block_outlined),
+    // Ocorrencia futura de uma serie recorrente que foi cancelada.
+    // Cor neutra ja existente — nao entra na escala de status operacionais.
+    'cancelled':
+        ('Cancelada', AppColors.textSecondary, Icons.event_busy_outlined),
   };
 
   @override

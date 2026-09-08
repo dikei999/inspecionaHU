@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
+import 'package:uuid/uuid.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/app_dimensions.dart';
@@ -9,11 +10,14 @@ import '../../../core/models/checklist.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/models/sector.dart';
 import '../../../core/services/audit_service.dart';
+import '../../../core/utils/task_series_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class AtribuirTarefaScreen extends StatefulWidget {
   /// Setor pré-selecionado — usado quando a tela é aberta a partir da aba
-  /// "Tarefas" de um setor.
+  /// "Tarefas" de um setor. Sendo informado, o campo de setor NÃO aparece:
+  /// a navegação já definiu o setor e repetir a escolha só permitia sair do
+  /// contexto por engano.
   final String? initialSectorId;
 
   const AtribuirTarefaScreen({super.key, this.initialSectorId});
@@ -25,6 +29,7 @@ class AtribuirTarefaScreen extends StatefulWidget {
 class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
   final _db = Supabase.instance.client;
   final _formKey = GlobalKey<FormState>();
+  final _uuid = const Uuid();
 
   bool _loading = false;
   bool _loadingData = true;
@@ -36,9 +41,20 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
   Sector? _setorSel;
   Checklist? _checklistSel;
   final Set<String> _inspetoresSel = {};
-  DateTime? _prazo;
+
+  // ── Recorrência ─────────────────────────────────────────────────────────
+  /// false = tarefa única (comportamento de sempre), true = série.
+  bool _recorrente = false;
+  DateTime? _prazo; // tarefa única
+  DateTime? _inicio; // série
+  DateTime? _fim; // série
+  String _frequencia = 'weekly';
+  final Set<String> _diasPersonalizados = {};
 
   String? _hospitalId;
+
+  /// O setor veio da navegação? Então não se escolhe setor aqui.
+  bool get _setorFixo => widget.initialSectorId != null;
 
   @override
   void initState() {
@@ -50,30 +66,31 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
     setState(() => _loadingData = true);
     final profile = context.read<AuthProvider>().profile;
     _hospitalId = profile?.hospitalId;
-    if (_hospitalId == null) return;
+    if (_hospitalId == null) {
+      if (mounted) setState(() => _loadingData = false);
+      return;
+    }
 
     try {
-      final setoresData = await _db
+      // Com setor fixo, basta o setor do contexto — não a lista inteira.
+      final setoresQuery = _db
           .from('sectors')
           .select()
           .eq('hospital_id', _hospitalId!)
-          .eq('status', 'active')
-          .order('name', ascending: true);
+          .eq('status', 'active');
 
-      if (mounted) {
-        setState(() {
-          _setores = setoresData.map(Sector.fromJson).toList();
-          _loadingData = false;
-        });
+      final setoresData = _setorFixo
+          ? await setoresQuery.eq('id', widget.initialSectorId!)
+          : await setoresQuery.order('name', ascending: true);
 
-        // Pré-seleção vinda da aba "Tarefas" do setor: dispara o mesmo
-        // fluxo do dropdown para carregar checklists e inspetores.
-        if (widget.initialSectorId != null) {
-          final inicial = _setores
-              .where((s) => s.id == widget.initialSectorId)
-              .firstOrNull;
-          if (inicial != null) await _onSetorChanged(inicial);
-        }
+      if (!mounted) return;
+      setState(() {
+        _setores = setoresData.map(Sector.fromJson).toList();
+        _loadingData = false;
+      });
+
+      if (_setorFixo && _setores.isNotEmpty) {
+        await _onSetorChanged(_setores.first);
       }
     } catch (_) {
       if (mounted) setState(() => _loadingData = false);
@@ -129,8 +146,34 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
     } catch (_) {}
   }
 
+  /// Datas que serão criadas com a configuração atual.
+  List<DateTime> get _datasPrevistas {
+    if (!_recorrente) return _prazo != null ? [_prazo!] : const [];
+    if (_inicio == null || _fim == null) return const [];
+    return TaskSeriesUtils.gerarDatas(
+      inicio: _inicio!,
+      fim: _fim!,
+      frequencia: _frequencia,
+      customDays: _diasPersonalizados.toList(),
+    );
+  }
+
+  bool get _excedeuLimite {
+    if (!_recorrente || _inicio == null || _fim == null) return false;
+    return TaskSeriesUtils.excedeuLimite(
+      inicio: _inicio!,
+      fim: _fim!,
+      frequencia: _frequencia,
+      customDays: _diasPersonalizados.toList(),
+    );
+  }
+
   Future<void> _atribuir() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_setorSel == null) {
+      _showSnack('Setor não identificado.', error: true);
+      return;
+    }
     if (_checklistSel == null) {
       _showSnack('Selecione um checklist.', error: true);
       return;
@@ -139,8 +182,15 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
       _showSnack('Selecione ao menos um Inspetor.', error: true);
       return;
     }
-    if (_prazo == null) {
-      _showSnack('Defina o prazo.', error: true);
+
+    final datas = _datasPrevistas;
+    if (datas.isEmpty) {
+      _showSnack(
+        _recorrente
+            ? 'Nenhuma data no período escolhido. Revise as datas e a frequência.'
+            : 'Defina o prazo.',
+        error: true,
+      );
       return;
     }
 
@@ -149,44 +199,85 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
     final profile = auth.profile!;
 
     try {
-      final tasks = _inspetoresSel.map((inspId) => {
+      // Uma série por Inspetor: cada um tem a própria sequência "1 de N".
+      final linhas = <Map<String, dynamic>>[];
+      for (final inspId in _inspetoresSel) {
+        final seriesId = _recorrente ? _uuid.v4() : null;
+        for (var i = 0; i < datas.length; i++) {
+          linhas.add({
             'checklist_id': _checklistSel!.id,
             'sector_id': _setorSel!.id,
             'hospital_id': _hospitalId,
             'inspector_id': inspId,
             'assigned_by': profile.id,
-            'due_date': _prazo!.toIso8601String().substring(0, 10),
+            'due_date': datas[i].toIso8601String().substring(0, 10),
             'status': 'pending',
-          }).toList();
+            if (seriesId != null) ...{
+              'series_id': seriesId,
+              'series_index': i + 1,
+              'series_total': datas.length,
+            },
+          });
+        }
+      }
 
-      final results = await _db
-          .from('tasks')
-          .insert(tasks)
-          .select('id');
+      final results = await _db.from('tasks').insert(linhas).select('id');
 
-      for (final r in results) {
+      // audit_log: uma entrada por série (ou por tarefa avulsa). Registrar
+      // 60 linhas idênticas por Inspetor só polui a trilha.
+      if (_recorrente) {
         await AuditService.log(
           userId: profile.id,
           hospitalId: _hospitalId,
-          action: 'atribuir_tarefa',
+          action: 'atribuir_serie_tarefas',
           entityType: 'task',
-          entityId: r['id'] as String,
+          entityId: (results.first)['id'] as String,
           details: {
             'checklist_id': _checklistSel!.id,
             'checklist_title': _checklistSel!.title,
             'sector_id': _setorSel!.id,
-            'due_date': _prazo!.toIso8601String().substring(0, 10),
+            'frequencia': _frequencia,
+            'ocorrencias': datas.length,
+            'inspetores': _inspetoresSel.length,
+            'inicio': datas.first.toIso8601String().substring(0, 10),
+            'fim': datas.last.toIso8601String().substring(0, 10),
           },
         );
+      } else {
+        for (final r in results) {
+          await AuditService.log(
+            userId: profile.id,
+            hospitalId: _hospitalId,
+            action: 'atribuir_tarefa',
+            entityType: 'task',
+            entityId: r['id'] as String,
+            details: {
+              'checklist_id': _checklistSel!.id,
+              'checklist_title': _checklistSel!.title,
+              'sector_id': _setorSel!.id,
+              'due_date': datas.first.toIso8601String().substring(0, 10),
+            },
+          );
+        }
       }
 
       if (mounted) {
-        _showSnack(
-            '${_inspetoresSel.length} tarefa(s) atribuída(s) com sucesso.');
+        _showSnack(_recorrente
+            ? '${linhas.length} tarefa(s) criada(s): '
+                '${datas.length} datas × ${_inspetoresSel.length} Inspetor(es).'
+            : '${_inspetoresSel.length} tarefa(s) atribuída(s) com sucesso.');
         Navigator.pop(context);
       }
-    } catch (_) {
-      if (mounted) _showSnack('Erro ao atribuir tarefas.', error: true);
+    } catch (e) {
+      debugPrint('[AtribuirTarefa] erro: $e');
+      if (mounted) {
+        // Coluna inexistente = migration de série não executada.
+        final msg = e.toString().contains('series_id')
+            ? 'Recurso indisponível: execute migration_task_series.sql no '
+                'SQL Editor do Supabase.'
+            : 'Erro ao atribuir tarefas.';
+        _showSnack(msg, error: true);
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -199,6 +290,20 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
     ));
   }
 
+  Future<void> _pickData({
+    required DateTime? atual,
+    required DateTime primeiro,
+    required ValueChanged<DateTime> onPick,
+  }) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: atual ?? primeiro,
+      firstDate: primeiro,
+      lastDate: DateTime(2030),
+    );
+    if (picked != null && mounted) onPick(picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loadingData) {
@@ -207,27 +312,59 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
           body: const Center(child: CircularProgressIndicator()));
     }
 
-    final fmt = DateFormat('dd/MM/yyyy');
+    final fmt = DateFormat('dd/MM/yyyy', 'pt_BR');
+    final amanha = DateTime.now().add(const Duration(days: 1));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Atribuir Tarefa')),
+      appBar: AppBar(
+        title: const Text('Atribuir Tarefa'),
+        // Setor vindo da navegação vira subtítulo, não campo editável.
+        bottom: _setorFixo && _setorSel != null
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(28),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.domain_outlined,
+                            size: 14, color: AppColors.textSecondary),
+                        const SizedBox(width: 5),
+                        Text(
+                          _setorSel!.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            : null,
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(AppDimensions.screenPadding),
           children: [
-            DropdownButtonFormField<Sector>(
-              key: ValueKey(_setorSel),
-              decoration: const InputDecoration(labelText: 'Setor *'),
-              initialValue: _setorSel,
-              items: _setores
-                  .map((s) =>
-                      DropdownMenuItem(value: s, child: Text(s.name)))
-                  .toList(),
-              onChanged: _onSetorChanged,
-              validator: (v) => v == null ? 'Selecione um setor' : null,
-            ),
-            const SizedBox(height: 16),
+            // Campo de setor SÓ quando a navegação não definiu o setor.
+            if (!_setorFixo) ...[
+              DropdownButtonFormField<Sector>(
+                key: ValueKey(_setorSel),
+                decoration: const InputDecoration(labelText: 'Setor *'),
+                initialValue: _setorSel,
+                items: _setores
+                    .map((s) => DropdownMenuItem(value: s, child: Text(s.name)))
+                    .toList(),
+                onChanged: _onSetorChanged,
+                validator: (v) => v == null ? 'Selecione um setor' : null,
+              ),
+              const SizedBox(height: 16),
+            ],
 
             if (_setorSel != null) ...[
               DropdownButtonFormField<Checklist>(
@@ -241,8 +378,7 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                             '${c.title}  (${AppConstants.frequencyLabel(c.frequency)})')))
                     .toList(),
                 onChanged: (v) => setState(() => _checklistSel = v),
-                validator: (v) =>
-                    v == null ? 'Selecione um checklist' : null,
+                validator: (v) => v == null ? 'Selecione um checklist' : null,
               ),
               const SizedBox(height: 16),
 
@@ -278,34 +414,142 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                         });
                       },
                     ))),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
 
-              // Prazo
-              InkWell(
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now().add(const Duration(days: 1)),
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime(2030),
-                  );
-                  if (picked != null && mounted) {
-                    setState(() => _prazo = picked);
-                  }
-                },
-                child: InputDecorator(
-                  decoration: const InputDecoration(labelText: 'Prazo *'),
-                  child: Text(
-                    _prazo != null ? fmt.format(_prazo!) : 'Selecionar data',
-                    style: TextStyle(
-                      color: _prazo != null
-                          ? AppColors.textPrimary
-                          : AppColors.textSecondary,
+              // ── Repetir ────────────────────────────────────────────────
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Repetir'),
+                subtitle: Text(
+                  _recorrente
+                      ? 'Cria uma tarefa para cada data do período.'
+                      : 'Tarefa única, com um prazo só.',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: AppColors.textSecondary),
+                ),
+                value: _recorrente,
+                onChanged: (v) => setState(() => _recorrente = v),
+              ),
+              const SizedBox(height: 8),
+
+              if (!_recorrente)
+                InkWell(
+                  onTap: () => _pickData(
+                    atual: _prazo,
+                    primeiro: DateTime.now(),
+                    onPick: (d) => setState(() => _prazo = d),
+                  ),
+                  child: InputDecorator(
+                    decoration: const InputDecoration(labelText: 'Prazo *'),
+                    child: Text(
+                      _prazo != null ? fmt.format(_prazo!) : 'Selecionar data',
+                      style: TextStyle(
+                        color: _prazo != null
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
+                      ),
                     ),
                   ),
+                )
+              else ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => _pickData(
+                          atual: _inicio,
+                          primeiro: DateTime.now(),
+                          onPick: (d) => setState(() {
+                            _inicio = d;
+                            if (_fim != null && _fim!.isBefore(d)) _fim = null;
+                          }),
+                        ),
+                        child: InputDecorator(
+                          decoration:
+                              const InputDecoration(labelText: 'Início *'),
+                          child: Text(
+                            _inicio != null
+                                ? fmt.format(_inicio!)
+                                : 'Selecionar',
+                            style: TextStyle(
+                              color: _inicio != null
+                                  ? AppColors.textPrimary
+                                  : AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => _pickData(
+                          atual: _fim,
+                          primeiro: _inicio ?? amanha,
+                          onPick: (d) => setState(() => _fim = d),
+                        ),
+                        child: InputDecorator(
+                          decoration: const InputDecoration(labelText: 'Fim *'),
+                          child: Text(
+                            _fim != null ? fmt.format(_fim!) : 'Selecionar',
+                            style: TextStyle(
+                              color: _fim != null
+                                  ? AppColors.textPrimary
+                                  : AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 32),
+                const SizedBox(height: 16),
+
+                DropdownButtonFormField<String>(
+                  decoration:
+                      const InputDecoration(labelText: 'Frequência *'),
+                  initialValue: _frequencia,
+                  items: const ['daily', 'weekly', 'biweekly', 'monthly', 'custom']
+                      .map((f) => DropdownMenuItem(
+                          value: f,
+                          child: Text(AppConstants.frequencyLabel(f))))
+                      .toList(),
+                  onChanged: (v) =>
+                      setState(() => _frequencia = v ?? 'weekly'),
+                ),
+
+                if (_frequencia == 'custom') ...[
+                  const SizedBox(height: 12),
+                  Text('Dias da semana *',
+                      style: Theme.of(context).textTheme.bodyMedium),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    children: AppConstants.weekDays.map((d) {
+                      final v = d['value']!;
+                      final sel = _diasPersonalizados.contains(v);
+                      return FilterChip(
+                        label: Text(d['label']!),
+                        selected: sel,
+                        onSelected: (on) => setState(() {
+                          if (on) {
+                            _diasPersonalizados.add(v);
+                          } else {
+                            _diasPersonalizados.remove(v);
+                          }
+                        }),
+                      );
+                    }).toList(),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+                _buildPreviaSerie(fmt),
+              ],
+
+              const SizedBox(height: 28),
 
               SizedBox(
                 height: AppDimensions.buttonHeight,
@@ -318,12 +562,95 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white),
                         )
-                      : const Text('Atribuir Tarefa(s)'),
+                      : Text(_recorrente
+                          ? 'Criar ${_datasPrevistas.length} tarefa(s)'
+                          : 'Atribuir Tarefa(s)'),
                 ),
               ),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// Prévia da série: quantas datas, primeira e última, e o aviso de corte.
+  Widget _buildPreviaSerie(DateFormat fmt) {
+    final datas = _datasPrevistas;
+
+    if (datas.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(AppDimensions.radiusCard),
+        ),
+        child: Text(
+          _frequencia == 'custom' && _diasPersonalizados.isEmpty
+              ? 'Escolha ao menos um dia da semana.'
+              : 'Defina início e fim para ver as datas.',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary50,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusCard),
+        border: Border.all(color: AppColors.primary100, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.event_repeat_outlined,
+                  size: 16, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                '${datas.length} ocorrência(s) por Inspetor',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: AppColors.primary, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'De ${fmt.format(datas.first)} até ${fmt.format(datas.last)}.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (_inspetoresSel.length > 1)
+            Text(
+              'Total: ${datas.length * _inspetoresSel.length} tarefas '
+              '(${_inspetoresSel.length} Inspetores).',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          if (_excedeuLimite) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    size: 15, color: AppColors.pending),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'O período gera mais de ${TaskSeriesUtils.maxOcorrencias} '
+                    'ocorrências. Serão criadas as '
+                    '${TaskSeriesUtils.maxOcorrencias} primeiras — encurte o '
+                    'período ou espace a frequência.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: AppColors.pending),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

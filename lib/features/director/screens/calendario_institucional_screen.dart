@@ -56,6 +56,8 @@ class _CalendarioInstitucionalScreenState
           .from('tasks')
           .select('*, checklists(archived_at)')
           .eq('hospital_id', hospitalId)
+          // Tarefa cancelada (serie interrompida) sai das listas.
+          .neq('status', 'cancelled')
           .gte('due_date', firstDay.toIso8601String().substring(0, 10))
           .lte('due_date', lastDay.toIso8601String().substring(0, 10));
 
