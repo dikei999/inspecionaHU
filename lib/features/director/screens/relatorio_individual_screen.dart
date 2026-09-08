@@ -33,6 +33,21 @@ class _RelatorioIndividualScreenState
   final _db = Supabase.instance.client;
 
   bool _loading = true;
+
+  // ── Pré-carregamento das fotos (item 7) ─────────────────────────────────
+  // Antes cada foto resolvia a própria signed URL e baixava sozinha, então
+  // elas apareciam aos poucos depois do relatório já aberto. Agora tudo é
+  // resolvido antes de exibir, com progresso contado.
+  bool _carregandoFotos = false;
+  int _fotosTotal = 0;
+  int _fotosProntas = 0;
+
+  /// photoUrl original -> signed URL pronta. Ausente = falhou.
+  final Map<String, String> _fotosResolvidas = {};
+
+  /// Fotos que não puderam ser carregadas: o item mostra aviso próprio e o
+  /// relatório abre mesmo assim.
+  final Set<String> _fotosComFalha = {};
   bool _validating = false;
   bool _exportingPdf = false;
   bool _exportingExcel = false;
@@ -190,9 +205,14 @@ class _RelatorioIndividualScreenState
           _sectorName = sectorData['name'] as String;
           _checklistTitle = clData['title'] as String;
           _hospitalName = hospitalData['name'] as String;
-          _loading = false;
         });
       }
+
+      // As fotos entram ANTES de liberar a tela: sem isso elas apareciam
+      // aos poucos, com o relatorio ja aberto.
+      await _preloadFotos();
+
+      if (mounted) setState(() => _loading = false);
     } catch (e) {
       debugPrint('[RelatorioIndividual] erro: $e');
       if (mounted) {
@@ -292,6 +312,58 @@ class _RelatorioIndividualScreenState
 
   // ── Validação ───────────────────────────────────────────────────────────────
 
+  /// Resolve as signed URLs e coloca as imagens em cache antes de exibir.
+  ///
+  /// Uma foto que falha NÃO trava a tela: entra em [_fotosComFalha], o item
+  /// correspondente mostra o aviso e o relatório abre normalmente.
+  Future<void> _preloadFotos() async {
+    final comFoto = _responses
+        .where((r) => r.photoUrl != null)
+        .map((r) => r.photoUrl!)
+        .toSet()
+        .toList();
+
+    if (comFoto.isEmpty) return;
+
+    if (mounted) {
+      setState(() {
+        _carregandoFotos = true;
+        _fotosTotal = comFoto.length;
+        _fotosProntas = 0;
+      });
+    }
+
+    for (final original in comFoto) {
+      try {
+        final url = await ReportExportService.freshSignedUrl(original);
+        if (url == null) {
+          _fotosComFalha.add(original);
+        } else {
+          _fotosResolvidas[original] = url;
+          // precacheImage deixa a imagem pronta em memoria: quando a tela
+          // aparecer, ela ja esta la, sem segundo carregamento.
+          //
+          // Falha AQUI nao invalida a foto: a URL e valida e o
+          // Image.network ainda pode carregar na hora de exibir. So o
+          // ganho do cache se perde.
+          if (mounted) {
+            try {
+              await precacheImage(NetworkImage(url), context);
+            } catch (e) {
+              debugPrint('[RelatorioIndividual] precache falhou: $e');
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[RelatorioIndividual] foto falhou: $e');
+        _fotosComFalha.add(original);
+      }
+      if (mounted) setState(() => _fotosProntas++);
+    }
+
+    if (mounted) setState(() => _carregandoFotos = false);
+  }
+
   Future<void> _validar() async {
     // Defesa em profundidade: o botão já está escondido para quem não é
     // Diretor, mas a ação não confia só na visibilidade.
@@ -361,8 +433,44 @@ class _RelatorioIndividualScreenState
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-          appBar: AppBar(title: const Text('Relatório')),
-          body: const Center(child: CircularProgressIndicator()));
+        appBar: AppBar(title: const Text('Relatório')),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Progresso determinado enquanto baixa as fotos; indeterminado
+              // enquanto busca os dados, quando ainda não há o que contar.
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  value: _carregandoFotos && _fotosTotal > 0
+                      ? _fotosProntas / _fotosTotal
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _carregandoFotos
+                    ? 'Carregando fotos'
+                    : 'Carregando relatório',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              if (_carregandoFotos && _fotosTotal > 0) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '$_fotosProntas de $_fotosTotal',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
     }
 
     if (_inspection == null) {
@@ -573,6 +681,10 @@ class _RelatorioIndividualScreenState
                       const SizedBox(height: 8),
                       _ResponsePhoto(
                         photoUrl: resp.photoUrl!,
+                        // Já resolvida no pré-carregamento: nada de baixar
+                        // de novo com a tela aberta.
+                        signedUrl: _fotosResolvidas[resp.photoUrl!],
+                        falhou: _fotosComFalha.contains(resp.photoUrl!),
                         capturedAt: resp.photoCapturedAt,
                       ),
                     ],
@@ -650,62 +762,68 @@ class _ItemNumberBadge extends StatelessWidget {
 class _ResponsePhoto extends StatelessWidget {
   final String photoUrl;
   final DateTime? capturedAt;
-  const _ResponsePhoto({required this.photoUrl, this.capturedAt});
+
+  /// URL assinada já resolvida no pré-carregamento da tela.
+  final String? signedUrl;
+
+  /// A foto falhou no pré-carregamento: mostra aviso neste item e o
+  /// relatório segue utilizável.
+  final bool falhou;
+
+  const _ResponsePhoto({
+    required this.photoUrl,
+    this.capturedAt,
+    this.signedUrl,
+    this.falhou = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        FutureBuilder<String?>(
-          future: ReportExportService.freshSignedUrl(photoUrl),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Container(
-                height: 140,
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+        if (falhou || signedUrl == null)
+          // Aviso no item, sem travar a tela (item 7).
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.pending50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.pending100),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.image_not_supported_outlined,
+                    size: 16, color: AppColors.pending),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'A foto deste item não pôde ser carregada.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: AppColors.pending),
                   ),
                 ),
-              );
-            }
-            final url = snapshot.data;
-            if (url == null) {
-              return Container(
+              ],
+            ),
+          )
+        else
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.network(
+              signedUrl!,
+              width: double.infinity,
+              fit: BoxFit.contain,
+              errorBuilder: (_, e, st) => Container(
                 height: 48,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                color: AppColors.background,
                 child: Text('Foto indisponível',
                     style: Theme.of(context).textTheme.bodySmall),
-              );
-            }
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                url,
-                width: double.infinity,
-                fit: BoxFit.contain,
-                errorBuilder: (_, e, st) => Container(
-                  height: 48,
-                  alignment: Alignment.center,
-                  color: AppColors.background,
-                  child: Text('Foto indisponível',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ),
               ),
-            );
-          },
-        ),
+            ),
+          ),
         if (capturedAt != null)
           Padding(
             padding: const EdgeInsets.only(top: 4),
