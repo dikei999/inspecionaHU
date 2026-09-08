@@ -11,6 +11,13 @@ class Checklist {
   final String createdBy;
   final DateTime createdAt;
 
+  /// Arquivamento REVERSÍVEL (bloco 1). Diferente de status='inactive':
+  /// arquivado sai das listas de trabalho E de todos os indicadores.
+  /// Nada é deletado — as inspeções já respondidas continuam acessíveis
+  /// pelo filtro "Arquivados".
+  final DateTime? archivedAt;
+  final String? archivedBy;
+
   const Checklist({
     required this.id,
     required this.sectorId,
@@ -23,6 +30,8 @@ class Checklist {
     required this.status,
     required this.createdBy,
     required this.createdAt,
+    this.archivedAt,
+    this.archivedBy,
   });
 
   factory Checklist.fromJson(Map<String, dynamic> json) => Checklist(
@@ -43,6 +52,10 @@ class Checklist {
         status: json['status'] as String,
         createdBy: json['created_by'] as String,
         createdAt: DateTime.parse(json['created_at'] as String),
+        archivedAt: json['archived_at'] != null
+            ? DateTime.parse(json['archived_at'] as String)
+            : null,
+        archivedBy: json['archived_by'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -57,7 +70,15 @@ class Checklist {
         'status': status,
         'created_by': createdBy,
         'created_at': createdAt.toIso8601String(),
+        'archived_at': archivedAt?.toIso8601String(),
+        'archived_by': archivedBy,
       };
 
   bool get isActive => status == 'active';
+
+  /// Arquivado: fora da operação e fora de todo indicador, mas preservado.
+  bool get isArchived => archivedAt != null;
+
+  /// Em operação: ativo E não arquivado. É o que gera tarefa nova.
+  bool get isOperational => isActive && !isArchived;
 }

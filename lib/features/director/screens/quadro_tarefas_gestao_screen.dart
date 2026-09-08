@@ -104,15 +104,20 @@ class _QuadroTarefasGestaoScreenState
         sectorMap[sec.id] = sec;
       }
 
-      final tasks = tasksData.map((t) {
-        final task = Task.fromJson(t);
-        return _TaskView(
-          task: task,
-          checklist: checklistMap[task.checklistId],
-          inspector: inspMap[task.inspectorId],
-          sector: sectorMap[task.sectorId],
-        );
-      }).toList();
+      final tasks = tasksData
+          .map((t) {
+            final task = Task.fromJson(t);
+            return _TaskView(
+              task: task,
+              checklist: checklistMap[task.checklistId],
+              inspector: inspMap[task.inspectorId],
+              sector: sectorMap[task.sectorId],
+            );
+          })
+          // Tarefa de checklist arquivado sai do quadro de gestao (bloco 1).
+          // O registro continua no banco e no historico.
+          .where((tv) => !(tv.checklist?.isArchived ?? false))
+          .toList();
 
       if (mounted) {
         setState(() {

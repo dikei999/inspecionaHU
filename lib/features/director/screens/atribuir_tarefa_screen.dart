@@ -118,7 +118,11 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
 
       if (mounted) {
         setState(() {
-          _checklists = clData.map(Checklist.fromJson).toList();
+          // Arquivado não gera tarefa nova (bloco 1).
+          _checklists = clData
+              .map(Checklist.fromJson)
+              .where((c) => !c.isArchived)
+              .toList();
           _inspetores = insp;
         });
       }

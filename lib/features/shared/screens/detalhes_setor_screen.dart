@@ -8,6 +8,7 @@ import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/checklist.dart';
+import '../../../core/services/archive_service.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/models/sector.dart';
 import '../../../core/models/task.dart';
@@ -473,6 +474,10 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
   bool _loading = true;
   List<Checklist> _checklists = [];
 
+  /// Filtro "Arquivados": false = lista de trabalho (padrão),
+  /// true = só os arquivados. Nada é deletado — é só uma visão.
+  bool _verArquivados = false;
+
   @override
   void initState() {
     super.initState();
@@ -489,15 +494,67 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
           .eq('status', 'active')
           .order('title', ascending: true);
       if (mounted) {
+        final todos = (data as List).map((e) => Checklist.fromJson(e)).toList();
         setState(() {
+          // Arquivado some da lista de trabalho e só aparece no filtro.
           _checklists =
-              (data as List).map((e) => Checklist.fromJson(e)).toList();
+              todos.where((c) => c.isArchived == _verArquivados).toList();
           _loading = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _toggleArquivar(Checklist checklist) async {
+    final auth = context.read<AuthProvider>();
+    final arquivar = !checklist.isArchived;
+
+    if (arquivar) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Arquivar checklist?'),
+          content: Text(
+            '"${checklist.title}" sai das listas de trabalho e deixa de contar '
+            'na taxa de conformidade e nos gráficos.\n\n'
+            'As inspeções já respondidas continuam salvas e acessíveis pelo '
+            'filtro "Arquivados". Nada é apagado e você pode desarquivar '
+            'quando quiser.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Arquivar'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true || !mounted) return;
+    }
+
+    final erro = await ArchiveService.setArchived(
+      checklistId: checklist.id,
+      archive: arquivar,
+      userId: auth.profile!.id,
+      hospitalId: auth.profile!.hospitalId,
+      title: checklist.title,
+    );
+
+    if (!mounted) return;
+    if (erro != null) {
+      _showSnack(erro, error: true);
+      return;
+    }
+    _showSnack(arquivar
+        ? 'Checklist arquivado. Fora dos indicadores.'
+        : 'Checklist desarquivado. De volta à operação.');
+    _load();
   }
 
   void _showSnack(String msg, {bool error = false}) {
@@ -592,19 +649,62 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
               label: const Text('Novo checklist'),
             )
           : null,
-      body: _loading
+      body: Column(
+        children: [
+          // Filtro Em operação / Arquivados — arquivar é reversível e
+          // nada some do banco, só muda de visão.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                AppDimensions.screenPadding, 12, AppDimensions.screenPadding, 0),
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                    value: false,
+                    label: Text('Em operação'),
+                    icon: Icon(Icons.play_circle_outline, size: 18)),
+                ButtonSegment(
+                    value: true,
+                    label: Text('Arquivados'),
+                    icon: Icon(Icons.inventory_2_outlined, size: 18)),
+              ],
+              selected: {_verArquivados},
+              showSelectedIcon: false,
+              onSelectionChanged: (sel) {
+                setState(() => _verArquivados = sel.first);
+                _load();
+              },
+            ),
+          ),
+          Expanded(child: _buildLista()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLista() {
+    return _loading
           ? const SkeletonList(itemHeight: 76)
           : RefreshIndicator(
               onRefresh: _load,
               child: _checklists.isEmpty
                   ? EmptyState(
-                      icon: Icons.checklist_outlined,
-                      title: 'Nenhum checklist neste setor',
-                      subtitle: widget.canEdit
-                          ? 'Crie um checklist para começar a atribuir tarefas aqui.'
-                          : 'Este setor ainda não tem checklists ativos.',
-                      actionLabel: widget.canEdit ? 'Novo checklist' : null,
-                      onAction: widget.canEdit ? _novoChecklist : null,
+                      icon: _verArquivados
+                          ? Icons.inventory_2_outlined
+                          : Icons.checklist_outlined,
+                      title: _verArquivados
+                          ? 'Nenhum checklist arquivado'
+                          : 'Nenhum checklist neste setor',
+                      subtitle: _verArquivados
+                          ? 'Checklists arquivados ficam aqui, fora dos '
+                              'indicadores, e podem voltar à operação a '
+                              'qualquer momento.'
+                          : widget.canEdit
+                              ? 'Crie um checklist para começar a atribuir tarefas aqui.'
+                              : 'Este setor ainda não tem checklists ativos.',
+                      actionLabel:
+                          widget.canEdit && !_verArquivados ? 'Novo checklist' : null,
+                      onAction:
+                          widget.canEdit && !_verArquivados ? _novoChecklist : null,
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(
@@ -617,38 +717,96 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
                         final c = _checklists[i];
                         return Card(
                           child: ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: AppColors.primary50,
-                              child: Icon(Icons.checklist_outlined,
-                                  color: AppColors.primary),
+                            leading: CircleAvatar(
+                              backgroundColor: c.isArchived
+                                  ? AppColors.border
+                                  : AppColors.primary50,
+                              child: Icon(
+                                  c.isArchived
+                                      ? Icons.inventory_2_outlined
+                                      : Icons.checklist_outlined,
+                                  color: c.isArchived
+                                      ? AppColors.textSecondary
+                                      : AppColors.primary),
                             ),
                             title: Text(c.title),
-                            subtitle: Text(_frequencyLabel(c.frequency)),
+                            subtitle: Text(c.isArchived
+                                ? '${_frequencyLabel(c.frequency)} • Arquivado'
+                                : _frequencyLabel(c.frequency)),
                             trailing: widget.canEdit
                                 ? PopupMenuButton<String>(
+                                    tooltip: 'Ações do checklist',
                                     onSelected: (v) async {
                                       if (v == 'edit') {
                                         await context.push(
                                             AppRoutes.editarChecklist(c.id));
                                         _load();
                                       }
+                                      if (v == 'archive' ||
+                                          v == 'unarchive') {
+                                        _toggleArquivar(c);
+                                      }
                                       if (v == 'disable') _desativar(c);
                                     },
-                                    itemBuilder: (_) => const [
-                                      PopupMenuItem(
-                                          value: 'edit', child: Text('Editar')),
-                                      PopupMenuItem(
-                                          value: 'disable',
-                                          child: Text('Desativar')),
-                                    ],
+                                    itemBuilder: (_) => c.isArchived
+                                        ? const [
+                                            PopupMenuItem(
+                                              value: 'unarchive',
+                                              child: ListTile(
+                                                contentPadding:
+                                                    EdgeInsets.zero,
+                                                dense: true,
+                                                leading: Icon(
+                                                    Icons.unarchive_outlined),
+                                                title: Text(
+                                                    'Voltar à operação'),
+                                              ),
+                                            ),
+                                          ]
+                                        : const [
+                                            PopupMenuItem(
+                                              value: 'edit',
+                                              child: ListTile(
+                                                contentPadding:
+                                                    EdgeInsets.zero,
+                                                dense: true,
+                                                leading:
+                                                    Icon(Icons.edit_outlined),
+                                                title: Text('Editar'),
+                                              ),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'archive',
+                                              child: ListTile(
+                                                contentPadding:
+                                                    EdgeInsets.zero,
+                                                dense: true,
+                                                leading: Icon(Icons
+                                                    .inventory_2_outlined),
+                                                title: Text('Arquivar'),
+                                                subtitle: Text(
+                                                    'Sai dos indicadores'),
+                                              ),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'disable',
+                                              child: ListTile(
+                                                contentPadding:
+                                                    EdgeInsets.zero,
+                                                dense: true,
+                                                leading: Icon(
+                                                    Icons.block_outlined),
+                                                title: Text('Desativar'),
+                                              ),
+                                            ),
+                                          ],
                                   )
                                 : null,
                           ),
                         );
                       },
                     ),
-            ),
-    );
+            );
   }
 }
 

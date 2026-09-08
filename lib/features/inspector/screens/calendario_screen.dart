@@ -42,13 +42,18 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
     try {
       final data = await _db
           .from('tasks')
-          .select()
+          .select('*, checklists(archived_at)')
           .eq('inspector_id', uid)
           .order('due_date', ascending: true);
 
       if (mounted) {
         setState(() {
           _tasks = (data as List)
+              // Checklist arquivado nao aparece no calendario (bloco 1).
+              .where((e) =>
+                  ((e as Map<String, dynamic>)['checklists']
+                      as Map<String, dynamic>?)?['archived_at'] ==
+                  null)
               .map((e) => Task.fromJson(e as Map<String, dynamic>))
               .toList();
           _loading = false;

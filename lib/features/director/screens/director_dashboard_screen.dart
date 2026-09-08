@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/archive_service.dart';
 import '../../../widgets/charts.dart';
 import '../../../widgets/notification_bell.dart';
 import '../../../widgets/skeleton_loader.dart';
@@ -63,10 +64,23 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
           .eq('id', hospitalId)
           .maybeSingle();
 
-      final reports = await _db
+      // Checklists arquivados ficam FORA de todo indicador (bloco 1).
+      // `reports` não tem checklist_id, então a exclusão passa pelas
+      // inspeções — e `tasks`, que tem, é filtrada direto por checklist.
+      final archivedChecklists =
+          await ArchiveService.archivedChecklistIds(hospitalId);
+      final archivedInspections =
+          await ArchiveService.inspectionIdsDeArquivados(hospitalId);
+
+      var reportsQuery = _db
           .from('reports')
           .select('compliance_rate, compliant, non_compliant, not_applicable')
           .eq('hospital_id', hospitalId);
+      if (archivedInspections.isNotEmpty) {
+        reportsQuery =
+            reportsQuery.not('inspection_id', 'in', archivedInspections);
+      }
+      final reports = await reportsQuery;
 
       double conf = 0;
       int sumC = 0, sumNc = 0, sumNa = 0;
@@ -84,18 +98,26 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
       final today = DateTime.now();
       final todayStr =
           '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-      final inspToday = await _db
+      var todayQuery = _db
           .from('inspections')
           .select('id')
           .eq('hospital_id', hospitalId)
           .gte('submitted_at', '${todayStr}T00:00:00')
           .lt('submitted_at', '${todayStr}T23:59:59');
+      if (archivedChecklists.isNotEmpty) {
+        todayQuery = todayQuery.not('checklist_id', 'in', archivedChecklists);
+      }
+      final inspToday = await todayQuery;
 
-      final openInspections = await _db
+      var openQuery = _db
           .from('inspections')
           .select('id')
           .eq('hospital_id', hospitalId)
           .neq('overall_status', 'validated');
+      if (archivedChecklists.isNotEmpty) {
+        openQuery = openQuery.not('checklist_id', 'in', archivedChecklists);
+      }
+      final openInspections = await openQuery;
 
       int ncCount = 0;
       if (openInspections.isNotEmpty) {
@@ -108,11 +130,16 @@ class _DirectorDashboardScreenState extends State<DirectorDashboardScreen> {
         ncCount = ncs.length;
       }
 
-      final pendingTasks = await _db
+      var pendingQuery = _db
           .from('tasks')
           .select('sector_id')
           .eq('hospital_id', hospitalId)
           .inFilter('status', ['pending', 'in_progress']);
+      if (archivedChecklists.isNotEmpty) {
+        pendingQuery =
+            pendingQuery.not('checklist_id', 'in', archivedChecklists);
+      }
+      final pendingTasks = await pendingQuery;
 
       final sectorIds =
           pendingTasks.map((t) => t['sector_id'] as String).toSet().length;

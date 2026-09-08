@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 
 import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/archive_service.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/sector.dart';
 import '../../../core/utils/app_date_utils.dart';
@@ -79,6 +80,13 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
         }
       }
 
+      // Checklists arquivados ficam FORA de todo indicador (bloco 1).
+      final archivedChecklists =
+          await ArchiveService.archivedChecklistIds(hospitalId);
+      final archivedInspections = await ArchiveService.inspectionIdsDeArquivados(
+          hospitalId,
+          sectorIds: sectorIds);
+
       // ── Conformidade agregada (tabela reports = cache calculado) ───────
       var reportsQuery = _db
           .from('reports')
@@ -87,6 +95,10 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
           .eq('hospital_id', hospitalId);
       if (sectorIds != null) {
         reportsQuery = reportsQuery.inFilter('sector_id', sectorIds);
+      }
+      if (archivedInspections.isNotEmpty) {
+        reportsQuery =
+            reportsQuery.not('inspection_id', 'in', archivedInspections);
       }
       final reports = await reportsQuery;
 
@@ -112,6 +124,9 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
       if (sectorIds != null) {
         openQuery = openQuery.inFilter('sector_id', sectorIds);
       }
+      if (archivedChecklists.isNotEmpty) {
+        openQuery = openQuery.not('checklist_id', 'in', archivedChecklists);
+      }
       final openInspections = await openQuery;
 
       int ncCount = 0;
@@ -133,6 +148,9 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
           .inFilter('overall_status', ['submitted', 'validated']);
       if (sectorIds != null) {
         recentQuery = recentQuery.inFilter('sector_id', sectorIds);
+      }
+      if (archivedChecklists.isNotEmpty) {
+        recentQuery = recentQuery.not('checklist_id', 'in', archivedChecklists);
       }
       final recentRows =
           await recentQuery.order('submitted_at', ascending: false).limit(20);

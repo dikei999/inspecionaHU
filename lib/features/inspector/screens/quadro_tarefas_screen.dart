@@ -57,14 +57,21 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
     try {
       final data = await _db
           .from('tasks')
-          .select('*, checklists(title), sectors(name)')
+          .select('*, checklists(title, archived_at), sectors(name)')
           .eq('inspector_id', uid)
           .inFilter('status', ['pending', 'in_progress'])
           .order('due_date', ascending: true);
 
       if (mounted) {
         setState(() {
-          _tasks = (data as List).map((e) {
+          _tasks = (data as List)
+              // Tarefa de checklist arquivado sai da lista de trabalho
+              // (bloco 1). O registro continua no banco, intacto.
+              .where((e) =>
+                  ((e as Map<String, dynamic>)['checklists']
+                      as Map<String, dynamic>?)?['archived_at'] ==
+                  null)
+              .map((e) {
             final map = e as Map<String, dynamic>;
             return _TaskView(
               task: Task.fromJson(map),
