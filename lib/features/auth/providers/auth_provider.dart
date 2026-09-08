@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/models/profile.dart';
+import '../../../core/services/offline_store.dart';
 import '../../../core/utils/cpf_utils.dart';
 
 enum AuthStatus { loading, unauthenticated, authenticated }
@@ -14,8 +15,13 @@ class AuthProvider extends ChangeNotifier {
   // enquanto o INSERT em profiles ainda não foi concluído.
   bool _insertingProfile = false;
 
+  /// Entrou com o perfil em cache porque não havia rede (6.1).
+  /// A UI usa para mostrar a faixa de status; o app funciona normalmente.
+  bool _offlineMode = false;
+
   AuthStatus get status => _status;
   Profile? get profile => _profile;
+  bool get offlineMode => _offlineMode;
 
   final _supabase = Supabase.instance.client;
 
@@ -65,12 +71,41 @@ class AuthProvider extends ChangeNotifier {
 
       _profile = data != null ? Profile.fromJson(data) : null;
       _status = AuthStatus.authenticated;
+      _offlineMode = false;
+
+      // Guarda o perfil para a próxima abertura sem rede (6.1).
+      if (data != null) {
+        await OfflineStore.saveProfile(uid, data);
+      }
     } catch (e) {
       debugPrint('[_loadProfile] erro: $e');
-      _profile = null;
-      _status = AuthStatus.unauthenticated;
+
+      // Causa raiz do "não passa do login" (6.1): a sessão do Supabase já é
+      // persistida, mas esta busca falha sem rede e o app caía para
+      // unauthenticated — a tela de login voltava mesmo com sessão válida.
+      // Com sessão válida e perfil em cache, entra em modo offline.
+      final cache = await OfflineStore.loadProfile(uid);
+      if (cache != null) {
+        _profile = Profile.fromJson(cache);
+        _status = AuthStatus.authenticated;
+        _offlineMode = true;
+        debugPrint('[_loadProfile] entrando com perfil em cache (offline)');
+      } else {
+        // Sem cache não há como saber o papel do usuário: primeiro login
+        // exige internet (limitação documentada em 6.7).
+        _profile = null;
+        _status = AuthStatus.unauthenticated;
+        _offlineMode = false;
+      }
     }
     notifyListeners();
+  }
+
+  /// Tenta trocar o perfil em cache pelo do servidor quando a rede volta.
+  /// Silencioso: se ainda não houver rede, continua em modo offline.
+  Future<void> revalidateProfileIfOffline() async {
+    if (!_offlineMode) return;
+    await _loadProfile();
   }
 
   /// Retorna null em caso de sucesso ou mensagem de erro.
@@ -198,7 +233,12 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> signOut() async {
     await _supabase.auth.signOut();
+    // Sair limpa o cache e os dados de trabalho: o próximo usuário deste
+    // aparelho não pode herdar perfil nem fila de envio de outro.
+    await OfflineStore.clearProfile();
+    await OfflineStore.clearWorkData();
     _profile = null;
+    _offlineMode = false;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
   }

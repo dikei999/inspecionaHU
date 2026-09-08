@@ -12,6 +12,7 @@ import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../shared/widgets/dashboard_header.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../core/services/offline_download_service.dart';
 
 /// Task + dados de exibição (título do checklist e nome do setor).
 class _TaskView {
@@ -37,6 +38,11 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
 
   bool _loading = true;
   List<_TaskView> _tasks = [];
+
+  /// Ids das tarefas com pacote salvo no aparelho (6.2).
+  Set<String> _baixadas = {};
+  /// Tarefa cujo download está em andamento (trava o botão).
+  String? _baixando;
   String _filter = 'all';
 
   @override
@@ -63,8 +69,14 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
           .inFilter('status', ['pending', 'in_progress'])
           .order('due_date', ascending: true);
 
+      final bundles = await OfflineDownloadService.listarBaixadas();
+
       if (mounted) {
         setState(() {
+          _baixadas = bundles
+              .map((b) => b['task_id'] as String?)
+              .whereType<String>()
+              .toSet();
           _tasks = (data as List)
               // Tarefa de checklist arquivado sai da lista de trabalho
               // (bloco 1). O registro continua no banco, intacto.
@@ -109,6 +121,104 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
   }
 
   int get _overdueCount => _tasks.where((tv) => tv.task.isOverdue).length;
+
+  /// Baixa a tarefa para uso offline, ou remove o pacote se já baixada.
+  Future<void> _toggleDownload(_TaskView tv) async {
+    final id = tv.task.id;
+
+    if (_baixadas.contains(id)) {
+      await OfflineDownloadService.remover(id);
+      if (!mounted) return;
+      setState(() => _baixadas.remove(id));
+      showActionFeedback(context, 'Removido do uso offline.');
+      return;
+    }
+
+    setState(() => _baixando = id);
+    final erro = await OfflineDownloadService.downloadTask(id);
+    if (!mounted) return;
+    setState(() => _baixando = null);
+
+    if (erro != null) {
+      showActionFeedback(context, erro, error: true);
+      return;
+    }
+    setState(() => _baixadas.add(id));
+    showActionFeedback(
+      context,
+      'Disponível offline: ${tv.checklistTitle}.',
+    );
+  }
+
+  /// Seção "Disponível offline" (6.2): o que já está no aparelho e pode ser
+  /// respondido sem internet.
+  Widget _buildDisponivelOffline() {
+    final baixadas =
+        _tasks.where((t) => _baixadas.contains(t.task.id)).toList();
+    if (baixadas.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary100, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.offline_pin_outlined,
+                  size: 16, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                'Disponível offline',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: AppColors.primary, fontWeight: FontWeight.w700),
+              ),
+              const Spacer(),
+              Text(
+                '${baixadas.length}',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: AppColors.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ...baixadas.map((t) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle,
+                        size: 13, color: AppColors.compliant),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${t.checklistTitle} · ${t.sectorName}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+          const SizedBox(height: 4),
+          Text(
+            'Estes checklists abrem e podem ser respondidos sem internet.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: AppColors.textSecondary, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -241,6 +351,9 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                       ),
                     ),
 
+                  // ── Disponível offline (6.2) ─────────────────────────
+                  _buildDisponivelOffline(),
+
                   // ── Lista ou empty state ─────────────────────────────
                   Expanded(
                     child: _filtered.isEmpty
@@ -260,6 +373,11 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                                 const SizedBox(height: 10),
                             itemBuilder: (ctx, i) => _TaskCard(
                               taskView: _filtered[i],
+                              baixada:
+                                  _baixadas.contains(_filtered[i].task.id),
+                              baixando:
+                                  _baixando == _filtered[i].task.id,
+                              onDownload: () => _toggleDownload(_filtered[i]),
                               onTap: () async {
                                 await ctx.push(AppRoutes.responderChecklist(
                                     _filtered[i].task.id));
@@ -350,7 +468,19 @@ class _FilterChip extends StatelessWidget {
 class _TaskCard extends StatelessWidget {
   final _TaskView taskView;
   final VoidCallback? onTap;
-  const _TaskCard({required this.taskView, this.onTap});
+
+  /// Baixar para uso offline (6.2).
+  final bool baixada;
+  final bool baixando;
+  final VoidCallback? onDownload;
+
+  const _TaskCard({
+    required this.taskView,
+    this.onTap,
+    this.baixada = false,
+    this.baixando = false,
+    this.onDownload,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -520,6 +650,33 @@ class _TaskCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
+                // Baixar para uso offline (6.2). Baixada = ícone preenchido.
+                if (onDownload != null)
+                  baixando
+                      ? const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : IconButton(
+                          icon: Icon(
+                            baixada
+                                ? Icons.offline_pin
+                                : Icons.download_for_offline_outlined,
+                            size: 22,
+                            color: baixada
+                                ? AppColors.compliant
+                                : AppColors.textSecondary,
+                          ),
+                          tooltip: baixada
+                              ? 'Disponível offline — toque para remover'
+                              : 'Baixar para uso offline',
+                          onPressed: onDownload,
+                        ),
                 const Icon(Icons.chevron_right,
                     size: 18, color: AppColors.textSecondary),
               ],

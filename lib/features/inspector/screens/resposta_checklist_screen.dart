@@ -21,6 +21,9 @@ import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/nr32_clause_chip.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../core/services/offline_download_service.dart';
+import '../../../core/services/offline_store.dart';
+import '../../../core/services/offline_sync_service.dart';
 
 /// Estado de persistência de uma resposta individual.
 enum SaveState { idle, saving, saved, error }
@@ -29,7 +32,12 @@ enum SaveState { idle, saving, saved, error }
 class _ItemState {
   String? status; // 'C' | 'NC' | 'NA' | null
   String observation;
-  String? photoLocalPath; // path local antes do upload
+  String? photoLocalPath;
+
+  /// Foto salva no aparelho aguardando upload, e o destino dela no Storage
+  /// (6.3). Enquanto não subir, a operação fica na fila com esses dois.
+  String? pendingPhotoPath;
+  String? pendingPhotoStoragePath; // path local antes do upload
   String? photoUrl; // URL após upload no Storage
   DateTime? photoCapturedAt;
   int? photoSizeKb;
@@ -175,15 +183,81 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
         _responses.putIfAbsent(item.id, () => _ItemState());
       }
 
+      // Pacote offline atualizado: se o Inspetor perder a rede no meio da
+      // inspeção, esta mesma tela reabre a partir daqui (6.2).
+      await OfflineDownloadService.downloadTask(widget.taskId);
+
       if (mounted) setState(() => _loadingInit = false);
     } catch (e) {
       debugPrint('[RespostaChecklist] _init erro: $e');
+      // Sem rede: tenta abrir pelo pacote baixado antes de desistir (6.2).
+      final abriu = await _initFromOfflineBundle();
+      if (abriu) return;
       if (mounted) {
         setState(() {
           _initError = 'Erro ao carregar inspeção: $e';
           _loadingInit = false;
         });
       }
+    }
+  }
+
+  /// Abre a inspeção a partir do pacote baixado, quando o servidor não
+  /// responde (6.2). Só funciona para tarefa que já foi aberta ao menos uma
+  /// vez com rede: a linha de `inspections` é criada no servidor, e criar
+  /// uma inspeção nova offline mudaria o fluxo online — fora do escopo
+  /// que o 6.6 autoriza.
+  Future<bool> _initFromOfflineBundle() async {
+    try {
+      final bundle = await OfflineStore.loadTaskBundle(widget.taskId);
+      if (bundle == null) return false;
+
+      final inspecaoJson = bundle['inspection'] as Map<String, dynamic>?;
+      if (inspecaoJson == null) return false;
+
+      _task = Task.fromJson(
+          Map<String, dynamic>.from(bundle['task'] as Map<dynamic, dynamic>));
+      _checklist = Checklist.fromJson(Map<String, dynamic>.from(
+          bundle['checklist'] as Map<dynamic, dynamic>));
+      _items = (bundle['items'] as List)
+          .map((e) =>
+              ChecklistItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      _inspection = Inspection.fromJson(Map<String, dynamic>.from(inspecaoJson));
+
+      _itemKeys.clear();
+      for (var _ in _items) {
+        _itemKeys.add(GlobalKey());
+      }
+
+      // Respostas já gravadas no pacote + o que estiver na fila local.
+      final respostas = (bundle['responses'] as List?) ?? const [];
+      for (final r in respostas) {
+        final m = Map<String, dynamic>.from(r as Map);
+        _responses[m['checklist_item_id'] as String] = _ItemState(
+          status: m['status'] as String?,
+          observation: (m['observation'] as String?) ?? '',
+          photoUrl: m['photo_url'] as String?,
+          photoCapturedAt: m['photo_captured_at'] != null
+              ? DateTime.tryParse(m['photo_captured_at'] as String)
+              : null,
+          photoSizeKb: m['photo_size_kb'] as int?,
+        )..saveState = SaveState.saved;
+      }
+      for (final item in _items) {
+        _responses.putIfAbsent(item.id, () => _ItemState());
+      }
+
+      if (mounted) {
+        setState(() {
+          _loadingInit = false;
+          _initError = null;
+        });
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[RespostaChecklist] _initFromOfflineBundle: $e');
+      return false;
     }
   }
 
@@ -238,8 +312,14 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       if (!mounted) return;
       setState(() => _isOnline = online);
 
-      if (online && wasOffline && _pendingSync.isNotEmpty) {
-        _syncPending();
+      if (online && wasOffline) {
+        // Fila em memoria desta tela (respostas simples).
+        if (_pendingSync.isNotEmpty) _syncPending();
+        // Fila em disco (respostas e fotos que aguardavam rede) — 6.4.
+        OfflineSyncService.syncPending().then((r) {
+          if (!mounted || !r.temAlgo) return;
+          setState(() {});
+        });
       }
     });
 
@@ -314,12 +394,23 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     };
 
     if (!_isOnline) {
-      // Sem rede: enfileira para sync ao reconectar (banner já avisa o usuário)
+      // Sem rede: grava a resposta no aparelho (6.3). A fila em memória
+      // morria junto com a tela; agora a operação vai para disco e é
+      // enviada pelo OfflineSyncService quando a conexão voltar.
       _pendingSync.removeWhere(
         (p) => p['checklist_item_id'] == itemId,
       ); // mantém só o mais recente
       _pendingSync.add(payload);
-      if (mounted) setState(() => state.saveState = SaveState.error);
+      await OfflineSyncService.enqueueResponse(
+        inspectionId: _inspection!.id,
+        checklistItemId: itemId,
+        payload: payload,
+        photoLocalPath: state.pendingPhotoPath,
+        photoStoragePath: state.pendingPhotoStoragePath,
+      );
+      // Enfileirado com sucesso é "salvo no aparelho", não erro: o que
+      // falta é só a rede, e a faixa global já diz isso.
+      if (mounted) setState(() => state.saveState = SaveState.saved);
       return;
     }
 
@@ -344,9 +435,17 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       }
     }
 
-    // Todas as tentativas falharam: enfileira e sinaliza erro no item
+    // Todas as tentativas falharam: enfileira em disco e sinaliza erro no
+    // item. A resposta não se perde nem se o app for fechado agora.
     _pendingSync.removeWhere((p) => p['checklist_item_id'] == itemId);
     _pendingSync.add(payload);
+    await OfflineSyncService.enqueueResponse(
+      inspectionId: _inspection!.id,
+      checklistItemId: itemId,
+      payload: payload,
+      photoLocalPath: state.pendingPhotoPath,
+      photoStoragePath: state.pendingPhotoStoragePath,
+    );
     if (mounted) setState(() => state.saveState = SaveState.error);
   }
 
@@ -445,6 +544,27 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       final fileName = '${_uuid.v4()}.jpg';
       final storagePath = '${_task!.hospitalId}/${_inspection!.id}/$fileName';
 
+      // Foto NUNCA é descartada por falta de rede (6.3): antes de tentar
+      // subir, sai do diretório temporário (que o sistema pode limpar) e
+      // vai para a pasta do app, junto do destino no Storage.
+      final persisted =
+          await OfflineStore.persistPhoto(compressedFile, fileName);
+      if (mounted) {
+        setState(() {
+          state.pendingPhotoPath = persisted;
+          state.pendingPhotoStoragePath = storagePath;
+          if (persisted != null) state.photoLocalPath = persisted;
+        });
+      }
+
+      if (!_isOnline) {
+        // Sem rede: a foto fica no aparelho e sobe junto da resposta
+        // quando a conexão voltar. Nada de erro vermelho aqui.
+        if (mounted) setState(() => state.uploading = false);
+        await _saveResponse(itemId);
+        return;
+      }
+
       await _db.storage
           .from('inspection-photos')
           .upload(storagePath, compressedFile);
@@ -458,7 +578,13 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       setState(() {
         state.photoUrl = signedUrl;
         state.uploading = false;
+        // Subiu: não há mais foto pendente para a fila.
+        state.pendingPhotoPath = null;
+        state.pendingPhotoStoragePath = null;
       });
+      if (persisted != null) {
+        await OfflineStore.deletePhoto(persisted);
+      }
 
       await _saveResponse(itemId);
     } catch (e) {
@@ -467,17 +593,28 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
         // O thumbnail local é limpo junto: mantê-lo faria o Inspetor
         // acreditar que a foto foi gravada quando o upload falhou, e a
         // foto sumiria depois no relatório e no PDF.
+        // A foto continua no aparelho e na fila (6.3): limpar aqui era o
+        // comportamento antigo, de quando não havia onde guardá-la.
+        final enfileirada = state.pendingPhotoPath != null;
         setState(() {
           state.uploading = false;
-          if (state.photoUrl == null) {
+          if (state.photoUrl == null && !enfileirada) {
             state.photoLocalPath = null;
             state.photoCapturedAt = null;
             state.photoSizeKb = null;
           }
         });
-        _showPhotoError(
-          'A foto NÃO foi salva. Verifique a conexão e tire novamente.',
-        );
+        if (enfileirada) {
+          await _saveResponse(itemId);
+          _showPhotoError(
+            'Sem conexão para enviar a foto agora. Ela ficou salva neste '
+            'aparelho e sobe sozinha quando a internet voltar.',
+          );
+        } else {
+          _showPhotoError(
+            'A foto NÃO foi salva. Verifique a conexão e tire novamente.',
+          );
+        }
       }
     }
   }

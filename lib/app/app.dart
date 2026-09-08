@@ -43,6 +43,8 @@ import '../features/inspector/screens/quadro_tarefas_screen.dart';
 import '../features/inspector/screens/historico_screen.dart';
 import '../features/inspector/screens/calendario_screen.dart';
 import '../features/inspector/screens/resposta_checklist_screen.dart';
+import '../core/services/offline_sync_service.dart';
+import '../widgets/connection_banner.dart';
 import 'routes.dart';
 import 'theme.dart';
 
@@ -65,6 +67,11 @@ class _AppState extends State<App> {
     _notificationProvider = NotificationProvider();
     _authProvider.addListener(_syncNotificationService);
     _syncNotificationService();
+    // Monitor de conexao + fila de envio offline (6.4/6.5).
+    OfflineSyncService.start();
+    // Voltou a rede depois de entrar com perfil em cache: troca pelo
+    // perfil do servidor, silenciosamente (6.1).
+    OfflineSyncService.online.addListener(_revalidarPerfilOffline);
     _router = GoRouter(
       refreshListenable: _authProvider,
       initialLocation: AppRoutes.login,
@@ -374,9 +381,15 @@ class _AppState extends State<App> {
   @override
   void dispose() {
     _authProvider.removeListener(_syncNotificationService);
+    OfflineSyncService.online.removeListener(_revalidarPerfilOffline);
     _notificationProvider.dispose();
     _authProvider.dispose();
     super.dispose();
+  }
+
+  void _revalidarPerfilOffline() {
+    if (!OfflineSyncService.online.value) return;
+    _authProvider.revalidateProfileIfOffline();
   }
 
   @override
@@ -392,6 +405,11 @@ class _AppState extends State<App> {
         theme: AppTheme.lightTheme,
         routerConfig: _router,
         debugShowCheckedModeBanner: false,
+        // Faixa global de status de conexao (6.5): some por completo
+        // quando esta online e sem pendencia, deixando o fluxo online
+        // exatamente como era.
+        builder: (context, child) =>
+            ConnectionBanner(child: child ?? const SizedBox.shrink()),
       ),
     );
   }
