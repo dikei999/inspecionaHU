@@ -53,6 +53,20 @@ void main() {
       });
     }
 
+    // Estado offline: entram o aviso "Sem conexão" (86) + gap (14) + o
+    // botão secundário (44+8); saem o bloco demo (44+10) e o link de criar
+    // conta (40+6), que exigem internet e não funcionariam ali.
+    final totalOffline = total + 86 + 14 + 44 + 8 - 54 - 46;
+
+    for (final tela in telasComuns.entries) {
+      test('estado offline cabe sem rolagem no ${tela.key}', () {
+        final util = tela.value - 90;
+        expect(totalOffline, lessThanOrEqualTo(util),
+            reason: 'com o aviso de sem conexão o conteúdo passou de '
+                '${util.toStringAsFixed(0)}px');
+      });
+    }
+
     test('mesmo com o bloco demo aberto continua cabendo no Pixel 5', () {
       // Aberto, o bloco cresce ~90px (rótulo + 4 botões em duas linhas).
       // Depois da reorganização isso ainda cabe num celular comum; o

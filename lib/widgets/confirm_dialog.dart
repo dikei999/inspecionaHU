@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
+import '../core/services/offline_sync_service.dart';
+import '../features/auth/providers/auth_provider.dart';
 
 /// Confirmação padronizada para ações destrutivas ou difíceis de desfazer
 /// (bloco 2). Antes cada tela escrevia o próprio AlertDialog, com títulos e
@@ -55,15 +57,50 @@ Future<bool> confirmAction(
 /// justamente o que permite trabalhar offline (bloco 6). Um toque acidental
 /// no ícone da AppBar em campo, sem internet, deixaria o Inspetor sem
 /// conseguir voltar a entrar.
-Future<bool> confirmSignOut(BuildContext context) => confirmAction(
-      context,
-      title: 'Sair da conta?',
-      message: 'Será necessário conexão com a internet para entrar '
-          'novamente. As respostas ainda não enviadas continuam salvas '
-          'neste aparelho.',
-      confirmLabel: 'Sair',
-      icon: Icons.logout,
-    );
+Future<bool> confirmSignOut(BuildContext context) async {
+  // O que existe no aparelho define o texto: sair APAGA o perfil em cache,
+  // os checklists baixados e a fila de envio. A mensagem antiga dizia que as
+  // respostas continuavam salvas, o que deixou de ser verdade.
+  final p = await AuthProvider.pendenciasAntesDeSair();
+  final semRede = !OfflineSyncService.online.value;
+  if (!context.mounted) return false;
+
+  final partes = <String>[];
+  if (p.naFila > 0) {
+    partes.add(
+        '${p.naFila} resposta(s) na fila de envio serão PERDIDAS, pois ainda '
+        'não chegaram ao servidor.');
+  }
+  if (p.baixados > 0) {
+    partes.add('${p.baixados} checklist(s) baixado(s) para uso offline serão '
+        'removidos do aparelho.');
+  }
+  if (p.temCache) {
+    partes.add('O acesso offline será perdido: entrar de novo exigirá '
+        'conexão com a internet.');
+  }
+  if (partes.isEmpty) {
+    partes.add('Será necessário conexão com a internet para entrar '
+        'novamente.');
+  }
+
+  // Fila pendente e sem rede é o pior caso: sair agora joga fora trabalho
+  // que ainda dá para enviar. O diálogo desencoraja em vez de facilitar.
+  final arriscado = p.naFila > 0 && semRede;
+  if (arriscado) {
+    partes.add('Sem conexão no momento, não há como enviar antes de sair. '
+        'O recomendado é aguardar a internet voltar.');
+  }
+
+  return confirmAction(
+    context,
+    title: arriscado ? 'Sair e descartar a fila?' : 'Sair da conta?',
+    message: partes.join('\n\n'),
+    confirmLabel: arriscado ? 'Sair e descartar' : 'Sair',
+    cancelLabel: arriscado ? 'Aguardar conexão' : 'Cancelar',
+    icon: arriscado ? Icons.warning_amber_rounded : Icons.logout,
+  );
+}
 
 /// SnackBar padronizado de resultado de ação (bloco 2): toda ação dá
 /// retorno visível, com a cor certa para sucesso e erro.

@@ -186,6 +186,61 @@ class _LoginScreenState extends State<LoginScreen> {
                                 'Entrar na conta',
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
+                              // Estado offline evidente, antes dos campos.
+                              if (_podeEntrarOffline) ...[
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.pending50,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                        color: AppColors.pending100),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Icon(Icons.wifi_off,
+                                          size: 18,
+                                          color: AppColors.pending),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Sem conexão',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleSmall
+                                                  ?.copyWith(
+                                                    color: AppColors.pending,
+                                                    fontWeight:
+                                                        FontWeight.w700,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Há dados salvos neste '
+                                              'aparelho. É possível entrar '
+                                              'e trabalhar offline.',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                      color:
+                                                          AppColors.pending),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+
                               const SizedBox(height: 16),
                               TextFormField(
                                 controller: _emailCtrl,
@@ -287,49 +342,50 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ? null
                                       : AppShadows.primaryGlow,
                                 ),
-                                child: ElevatedButton(
-                                  onPressed: _loading ? null : _submit,
-                                  child: _loading
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Text('Entrar'),
-                                ),
+                                child: _podeEntrarOffline
+                                    // Sem rede e com perfil salvo, entrar
+                                    // com senha vai falhar de qualquer
+                                    // jeito. O botão principal passa a ser
+                                    // o que funciona.
+                                    ? ElevatedButton.icon(
+                                        onPressed: _loading
+                                            ? null
+                                            : _continuarOffline,
+                                        icon: const Icon(Icons.wifi_off,
+                                            size: 18),
+                                        label:
+                                            const Text('Continuar offline'),
+                                      )
+                                    : ElevatedButton(
+                                        onPressed: _loading ? null : _submit,
+                                        child: _loading
+                                            ? const SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : const Text('Entrar'),
+                                      ),
                               ),
 
-                              // ── Continuar offline ────────────────────
-                              // Discreto e condicional: sem rede e com
-                              // perfil salvo. Garante a entrada mesmo se o
-                              // caminho automático falhar no cold start.
+                              // Com o offline em primeiro plano, entrar com
+                              // senha continua acessível — só recua.
                               if (_podeEntrarOffline) ...[
-                                const SizedBox(height: 10),
-                                OutlinedButton.icon(
-                                  onPressed:
-                                      _loading ? null : _continuarOffline,
-                                  icon: const Icon(Icons.wifi_off, size: 16),
-                                  label: const Text('Continuar offline'),
+                                const SizedBox(height: 8),
+                                OutlinedButton(
+                                  onPressed: _loading ? null : _submit,
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: AppColors.textSecondary,
                                     side: const BorderSide(
                                         color: AppColors.borderStrong),
                                     minimumSize:
-                                        const Size(double.infinity, 42),
+                                        const Size(double.infinity, 44),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Sem conexão. A entrada será feita com '
-                                  'os dados salvos neste aparelho.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textDisabled,
-                                  ),
+                                  child: const Text('Tentar entrar online'),
                                 ),
                               ],
                             ],
@@ -342,7 +398,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         // Recolhido por padrão: aberto, era ele que fazia a
                         // tela passar da altura do celular. O bloco continua
                         // aqui, a um toque de distância.
-                        if (AppConfig.showDemoLogin) ...[
+                        // Sem rede, o login demo nao funciona (ele autentica
+                        // no servidor) e so ocuparia altura. Some junto com
+                        // o link de criar conta, que tambem exige internet.
+                        if (AppConfig.showDemoLogin && !_podeEntrarOffline) ...[
                           _DemoLoginCard(
                             loading: _loading,
                             onSelect: _demoLogin,
@@ -351,6 +410,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
 
                         // ── Link criar conta ─────────────────────────────
+                        if (!_podeEntrarOffline)
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [

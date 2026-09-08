@@ -23,6 +23,16 @@ class AuthProvider extends ChangeNotifier {
   /// de "a renovação do token falhou sem rede" no listener de auth.
   bool _signingOut = false;
 
+  /// O usuário entrou pelo botão "Continuar offline".
+  ///
+  /// Enquanto isso valer, NADA pode chamar o servidor por conta própria: o
+  /// connectivity_plus reporta "conectado" só por haver Wi-Fi, mesmo sem
+  /// internet de verdade, e a revalidação automática disparava
+  /// refreshSession() — que é de onde vinha o erro de token com a URL do
+  /// Supabase logo após tocar no botão.
+  bool _entradaOfflineManual = false;
+  bool get entradaOfflineManual => _entradaOfflineManual;
+
   AuthStatus get status => _status;
   Profile? get profile => _profile;
   bool get offlineMode => _offlineMode;
@@ -108,6 +118,20 @@ class AuthProvider extends ChangeNotifier {
     return true;
   }
 
+  /// O que será perdido se o usuário sair agora. Alimenta a confirmação de
+  /// logout, que precisa ser explícita quando há trabalho no aparelho.
+  static Future<({bool temCache, int baixados, int naFila})>
+      pendenciasAntesDeSair() async {
+    final cache = await OfflineStore.loadAnyProfile();
+    final baixados = await OfflineStore.listTaskBundles();
+    final fila = await OfflineStore.queueLength();
+    return (
+      temCache: cache != null,
+      baixados: baixados.length,
+      naFila: fila,
+    );
+  }
+
   /// Existe perfil em cache para oferecer "Continuar offline" na tela de
   /// login? Não considera a marca de saída: se o usuário está diante da
   /// tela de login, entrar é justamente o que ele quer fazer.
@@ -124,15 +148,20 @@ class AuthProvider extends ChangeNotifier {
     final cache = await OfflineStore.loadAnyProfile();
     if (cache == null) {
       return 'Nenhum perfil salvo neste aparelho. '
-          'É preciso entrar com internet ao menos uma vez.';
+          'É necessário entrar com internet ao menos uma vez.';
     }
-    // O usuário pediu para entrar: a marca de uma saída anterior não pode
-    // bloquear, mas é limpa para o estado ficar coerente.
-    await OfflineStore.clearSignedOut();
+
+    // NENHUMA chamada ao servidor aqui: nem refreshSession, nem busca de
+    // perfil. O botão existe justamente para funcionar sem rede.
+    //
+    // A marca de saída NÃO é limpa: ela registra que o usuário saiu de
+    // propósito e continua valendo para a abertura automática. Só um login
+    // com senha a remove.
     _profile = Profile.fromJson(cache.profile);
     _status = AuthStatus.authenticated;
     _offlineMode = true;
-    debugPrint('[AuthProvider] entrada offline manual (botão do login)');
+    _entradaOfflineManual = true;
+    debugPrint('[AuthProvider] entrada offline manual — sem tocar na rede');
     notifyListeners();
     return null;
   }
@@ -220,6 +249,10 @@ class AuthProvider extends ChangeNotifier {
   /// descartada junto com o token expirado e precisa ser renovada antes.
   Future<void> revalidateProfileIfOffline() async {
     if (!_offlineMode) return;
+    // Entrou pelo botão: não sai daqui por conta própria. O connectivity_plus
+    // acusa "conectado" com Wi-Fi sem internet, e a tentativa de renovar a
+    // sessão devolvia erro de token na cara do usuário.
+    if (_entradaOfflineManual) return;
     await tentarSairDoModoOffline();
   }
 
@@ -340,6 +373,7 @@ class AuthProvider extends ChangeNotifier {
       // entrada offline seguinte. Vale para o login normal e para os
       // botões de login rápido demo, que passam por este mesmo método.
       await OfflineStore.clearSignedOut();
+      _entradaOfflineManual = false;
       await _loadProfile();
       debugPrint('[signIn] perfil carregado: ${_profile?.id}');
       return null;
@@ -371,6 +405,7 @@ class AuthProvider extends ChangeNotifier {
       await OfflineStore.clearWorkData();
       _profile = null;
       _offlineMode = false;
+      _entradaOfflineManual = false;
       _status = AuthStatus.unauthenticated;
       notifyListeners();
     } finally {
