@@ -569,6 +569,53 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     if (mounted) setState(() => _naFilaLocal = n);
   }
 
+  /// Drena a fila local desta inspeção antes de permitir finalizar
+  /// (item 1). Devolve true só quando a fila desta inspeção ficou vazia —
+  /// aí sim é seguro marcar overall_status = 'submitted', porque nenhuma
+  /// resposta pendente vai virar órfã contra a política de "só em draft".
+  Future<bool> _drenarAntesDeFinalizar() async {
+    if (_inspection == null) return false;
+
+    final dialogCtx = context;
+    showDialog(
+      context: dialogCtx,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Expanded(child: Text('Enviando respostas pendentes…')),
+          ],
+        ),
+      ),
+    );
+
+    await OfflineSyncService.syncPending();
+    await _atualizarContagemLocal();
+
+    if (dialogCtx.mounted) {
+      Navigator.of(dialogCtx, rootNavigator: true).pop();
+    }
+    if (!mounted) return false;
+
+    if (_naFilaLocal > 0) {
+      if (!mounted) return false;
+      showActionFeedback(
+        context,
+        '$_naFilaLocal resposta(s) ainda não foram enviadas. Verifique a '
+        'conexão e tente finalizar novamente.',
+        error: true,
+      );
+      return false;
+    }
+    return true;
+  }
+
   // ── Saida com pendencia (bloco 4) ─────────────────────────────────────────
 
   /// Há risco REAL de perder resposta ao sair agora?
@@ -786,6 +833,26 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       );
       return;
     }
+
+    // Causa raiz do item 1 (auditoria set/2026): responder offline, e
+    // finalizar assim que a rede volta, ANTES de a fila local terminar de
+    // subir, deixava resposta(s) presa(s) para sempre. A política do banco
+    // bloqueia UPDATE/INSERT em inspection_responses quando a inspeção não
+    // está mais em 'draft' (regra 6.7 — correta, não foi afrouxada); o
+    // problema era o app permitir esse UPDATE de overall_status ANTES de
+    // esvaziar a fila, criando uma corrida sem volta: a resposta pendente
+    // vira definitivamente órfã, e o retry automático nunca mais consegue,
+    // porque o erro deixou de ser transitório.
+    //
+    // A correção é drenar a fila DESTA inspeção antes de finalizar. Se não
+    // conseguir (sem rede de fato no momento), bloqueia o envio — melhor
+    // pedir para tentar de novo do que gerar uma pendência órfã.
+    await _atualizarContagemLocal();
+    if (_naFilaLocal > 0) {
+      final enviado = await _drenarAntesDeFinalizar();
+      if (!enviado) return;
+    }
+    if (!mounted) return;
 
     // Valida que todos os itens foram respondidos
     for (int i = 0; i < _items.length; i++) {

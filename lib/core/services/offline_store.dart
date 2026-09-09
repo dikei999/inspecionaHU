@@ -55,7 +55,10 @@ class OfflineStore {
   // Sem isso o app cai para unauthenticated quando _loadProfile() falha por
   // falta de rede, mesmo com sessão válida persistida.
 
-  static Future<void> saveProfile(String userId, Map<String, dynamic> json) async {
+  static Future<void> saveProfile(
+    String userId,
+    Map<String, dynamic> json,
+  ) async {
     try {
       final d = await _dir('.');
       final f = File('${d.path}/profile.json');
@@ -87,7 +90,7 @@ class OfflineStore {
   /// a renovação falhou sem rede, então não há uid para consultar. Devolve
   /// o par (userId, perfil) do último login bem-sucedido neste aparelho.
   static Future<({String userId, Map<String, dynamic> profile})?>
-      loadAnyProfile() async {
+  loadAnyProfile() async {
     try {
       final d = await _dir('.');
       final f = File('${d.path}/profile.json');
@@ -111,9 +114,9 @@ class OfflineStore {
   static Future<void> markSignedOut() async {
     try {
       final d = await _dir('.');
-      await File('${d.path}/signed_out.flag').writeAsString(
-        DateTime.now().toIso8601String(),
-      );
+      await File(
+        '${d.path}/signed_out.flag',
+      ).writeAsString(DateTime.now().toIso8601String());
     } catch (e) {
       debugPrint('[OfflineStore] markSignedOut: $e');
     }
@@ -230,7 +233,8 @@ class OfflineStore {
       await for (final e in d.list()) {
         if (e is File && e.path.endsWith('.json')) {
           try {
-            final op = jsonDecode(await e.readAsString()) as Map<String, dynamic>;
+            final op =
+                jsonDecode(await e.readAsString()) as Map<String, dynamic>;
             op['_op_id'] = e.uri.pathSegments.last.replaceAll('.json', '');
             out.add(op);
           } catch (_) {
@@ -238,8 +242,11 @@ class OfflineStore {
           }
         }
       }
-      out.sort((a, b) =>
-          (a['queued_at'] as String? ?? '').compareTo(b['queued_at'] as String? ?? ''));
+      out.sort(
+        (a, b) => (a['queued_at'] as String? ?? '').compareTo(
+          b['queued_at'] as String? ?? '',
+        ),
+      );
       return out;
     } catch (e) {
       debugPrint('[OfflineStore] loadQueue: $e');
@@ -257,6 +264,38 @@ class OfflineStore {
     }
   }
 
+  /// Registra no PRÓPRIO arquivo da operação o motivo exato da última
+  /// falha de envio — código, mensagem, detalhe/hint (Postgrest) ou
+  /// statusCode/error (Storage), e quantas tentativas já houve.
+  ///
+  /// Antes o erro só ia para debugPrint(), que ninguém lê fora do PC
+  /// plugado. Guardar junto da operação é o que permite a interface
+  /// mostrar "por que" cada pendência está travada, sem precisar do
+  /// terminal — é a causa do item 1 ficar visível no celular.
+  static Future<void> registrarFalha(
+    String opId, {
+    required String etapa,
+    String? codigo,
+    required String mensagem,
+    String? detalhe,
+  }) async {
+    try {
+      final d = await _dir('queue');
+      final f = File('${d.path}/$opId.json');
+      if (!await f.exists()) return;
+      final op = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+      op['attempts'] = ((op['attempts'] as int?) ?? 0) + 1;
+      op['last_attempt_at'] = DateTime.now().toIso8601String();
+      op['last_error_stage'] = etapa; // 'foto' ou 'resposta'
+      op['last_error_code'] = codigo;
+      op['last_error_message'] = mensagem;
+      op['last_error_detail'] = detalhe;
+      await f.writeAsString(jsonEncode(op));
+    } catch (e) {
+      debugPrint('[OfflineStore] registrarFalha: $e');
+    }
+  }
+
   static Future<int> queueLength() async => (await loadQueue()).length;
 
   /// Respostas da fila que pertencem a UMA inspeção, na ordem de gravação.
@@ -270,8 +309,10 @@ class OfflineStore {
   ) async {
     final fila = await loadQueue();
     return fila
-        .where((op) =>
-            op['type'] == 'response' && op['inspection_id'] == inspectionId)
+        .where(
+          (op) =>
+              op['type'] == 'response' && op['inspection_id'] == inspectionId,
+        )
         .toList();
   }
 

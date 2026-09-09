@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/services/offline_sync_service.dart';
+import 'pending_sync_sheet.dart';
 
 /// Faixa fina e global de status de conexão (6.5).
 ///
@@ -70,6 +71,9 @@ class ConnectionBanner extends StatelessWidget {
         texto: pendentes > 0
             ? 'Sem conexão · $pendentes ${_plural(pendentes)} na fila'
             : 'Sem conexão · trabalhando offline',
+        // Tocável mesmo offline: o painel lê a fila do disco, não precisa
+        // de rede — dá pra ver o que está pendente antes de reconectar.
+        onTap: pendentes > 0 ? () => PendingSyncSheet.show(context) : null,
       );
     }
 
@@ -81,6 +85,7 @@ class ConnectionBanner extends StatelessWidget {
         corTexto: AppColors.primary,
         icone: Icons.sync,
         texto: 'Enviando · $pendentes ${_plural(pendentes)}',
+        onTap: () => PendingSyncSheet.show(context),
       );
     }
 
@@ -91,11 +96,14 @@ class ConnectionBanner extends StatelessWidget {
         corTexto: AppColors.pending,
         icone: Icons.cloud_upload_outlined,
         texto: '$pendentes ${_plural(pendentes)} aguardando envio',
+        onTap: () => PendingSyncSheet.show(context),
       );
     }
 
     // Fila zerada logo após um envio: confirma o resultado e some.
-    if (resultado != null && resultado.enviadas > 0 && resultado.falharam == 0) {
+    if (resultado != null &&
+        resultado.enviadas > 0 &&
+        resultado.falharam == 0) {
       return _Faixa(
         cor: AppColors.compliant100,
         corTexto: AppColors.compliant,
@@ -105,12 +113,16 @@ class ConnectionBanner extends StatelessWidget {
       );
     }
 
+    // Item 1.b: falha exposta na faixa com atalho direto pro motivo — antes
+    // dizia só "tentando de novo" e não sumia, sem forma de ver o porquê
+    // sem o PC. Tocar aqui abre o painel com o erro exato de cada uma.
     if (resultado != null && resultado.falharam > 0) {
       return _Faixa(
         cor: AppColors.nonCompliant100,
         corTexto: AppColors.nonCompliant,
         icone: Icons.error_outline,
-        texto: '${resultado.falharam} envio(s) falharam · tentando de novo',
+        texto: '${resultado.falharam} envio(s) falharam · toque para ver',
+        onTap: () => PendingSyncSheet.show(context),
       );
     }
 
@@ -127,39 +139,51 @@ class _Faixa extends StatelessWidget {
   final IconData icone;
   final String texto;
 
+  /// Quando presente, a faixa vira tocável — item 1.b: painel com o
+  /// motivo exato de cada pendência, sem precisar do PC.
+  final VoidCallback? onTap;
+
   const _Faixa({
     required this.cor,
     required this.corTexto,
     required this.icone,
     required this.texto,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: cor,
-      child: SizedBox(
-        width: double.infinity,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icone, size: 13, color: corTexto),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  texto,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: corTexto,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: double.infinity,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icone, size: 13, color: corTexto),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    texto,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: corTexto,
+                    ),
                   ),
                 ),
-              ),
-            ],
+                if (onTap != null) ...[
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right, size: 14, color: corTexto),
+                ],
+              ],
+            ),
           ),
         ),
       ),

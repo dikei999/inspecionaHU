@@ -15,11 +15,7 @@ class SyncResult {
   final int falharam;
   final int restantes;
 
-  const SyncResult({
-    this.enviadas = 0,
-    this.falharam = 0,
-    this.restantes = 0,
-  });
+  const SyncResult({this.enviadas = 0, this.falharam = 0, this.restantes = 0});
 
   bool get temAlgo => enviadas > 0 || falharam > 0;
 }
@@ -243,6 +239,11 @@ class OfflineSyncService {
       final fila = await OfflineStore.loadQueue();
       for (final op in fila) {
         final opId = op['_op_id'] as String;
+        // Marca em qual etapa a operação está antes de tentar, para o
+        // catch abaixo saber o que registrar mesmo sem reexaminar o
+        // payload — é a diferença entre "falhou subindo a foto" e
+        // "falhou gravando a resposta" na interface (item 1.a/1.b).
+        var etapaAtual = 'foto';
         try {
           final payload = Map<String, dynamic>.from(
             op['payload'] as Map<dynamic, dynamic>,
@@ -250,14 +251,14 @@ class OfflineSyncService {
 
           // 1. Foto pendente: sobe primeiro e vira signed URL.
           //
-          // Antes, se o arquivo local não existisse mais (file.exists()
-          // devolvendo false por qualquer motivo), o código simplesmente
-          // pulava o upload em silêncio e seguia para gravar a resposta
-          // SEM foto — sem erro, sem falha registrada, contando como
-          // sucesso. Era uma via de "foto sumiu" sem nenhum rastro.
+          // Se o arquivo local não existisse mais (file.exists()
+          // devolvendo false por qualquer motivo), o código antes
+          // simplesmente pulava o upload em silêncio e seguia para gravar
+          // a resposta SEM foto — sem erro, sem falha registrada, contando
+          // como sucesso. Era uma via de "foto sumiu" sem nenhum rastro.
           // Agora a ausência do arquivo quando ele era esperado é uma
-          // falha explícita da operação: fica na fila, não é enviada
-          // sem a foto que a acompanhava.
+          // falha explícita da operação: fica na fila, não é enviada sem
+          // a foto que a acompanhava.
           final localPath = op['photo_local_path'] as String?;
           final storagePath = op['photo_storage_path'] as String?;
           if (localPath != null && storagePath != null) {
@@ -267,7 +268,9 @@ class OfflineSyncService {
                 'foto local ausente ($localPath) — mantendo na fila',
               );
             }
-            await _db.storage.from('inspection-photos').upload(
+            await _db.storage
+                .from('inspection-photos')
+                .upload(
                   storagePath,
                   file,
                   fileOptions: const FileOptions(upsert: true),
@@ -279,10 +282,10 @@ class OfflineSyncService {
           }
 
           // 2. Resposta: upsert idempotente, o mesmo do fluxo online.
-          await _db.from('inspection_responses').upsert(
-                payload,
-                onConflict: 'inspection_id,checklist_item_id',
-              );
+          etapaAtual = 'resposta';
+          await _db
+              .from('inspection_responses')
+              .upsert(payload, onConflict: 'inspection_id,checklist_item_id');
 
           await OfflineStore.dequeue(opId);
           if (localPath != null) {
@@ -290,8 +293,41 @@ class OfflineSyncService {
           }
           enviadas++;
         } catch (e) {
-          debugPrint('[OfflineSync] falha na op $opId: $e');
+          debugPrint('[OfflineSync] falha na op $opId ($etapaAtual): $e');
           falharam++;
+          // Erro estruturado gravado JUNTO da operação — item 1.a/1.b:
+          // sem isto o motivo real morria no debugPrint, ilegível fora
+          // do PC. PostgrestException e StorageException carregam
+          // código/status próprios; qualquer outra exceção (arquivo
+          // ausente, timeout de rede) vira mensagem + tipo Dart.
+          if (e is PostgrestException) {
+            final detalhes = [
+              if (e.details != null) 'details: ${e.details}',
+              if (e.hint != null) 'hint: ${e.hint}',
+            ].join(' · ');
+            await OfflineStore.registrarFalha(
+              opId,
+              etapa: etapaAtual,
+              codigo: e.code,
+              mensagem: e.message,
+              detalhe: detalhes.isEmpty ? null : detalhes,
+            );
+          } else if (e is StorageException) {
+            await OfflineStore.registrarFalha(
+              opId,
+              etapa: etapaAtual,
+              codigo: e.statusCode,
+              mensagem: e.message,
+              detalhe: e.error,
+            );
+          } else {
+            await OfflineStore.registrarFalha(
+              opId,
+              etapa: etapaAtual,
+              codigo: e.runtimeType.toString(),
+              mensagem: e.toString(),
+            );
+          }
           // Permanece na fila para a próxima tentativa. A foto NÃO é
           // apagada: perder a evidência é pior que reenviar.
         }
