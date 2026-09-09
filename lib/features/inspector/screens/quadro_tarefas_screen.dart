@@ -15,6 +15,7 @@ import '../../shared/widgets/dashboard_header.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../core/services/data_source.dart';
 import '../../../core/services/offline_download_service.dart';
+import '../../../widgets/app_filter_chip.dart';
 
 /// Task + dados de exibição (título do checklist e nome do setor).
 class _TaskView {
@@ -357,42 +358,42 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
-                            _FilterChip(
+                            AppFilterChip(
                               label: 'Todas',
                               count: _tasks.length,
                               selected: _filter == 'all',
-                              onTap: () => setState(() => _filter = 'all'),
+                              onSelected: (_) =>
+                                  setState(() => _filter = 'all'),
                             ),
                             const SizedBox(width: 8),
-                            _FilterChip(
+                            AppFilterChip(
                               label: 'Em andamento',
                               count: _tasks
                                   .where((t) => t.task.status == 'in_progress')
                                   .length,
                               selected: _filter == 'in_progress',
-                              color: AppColors.primary,
-                              onTap: () =>
+                              onSelected: (_) =>
                                   setState(() => _filter = 'in_progress'),
                             ),
                             const SizedBox(width: 8),
-                            _FilterChip(
+                            AppFilterChip(
                               label: 'Pendentes',
                               count: _tasks
-                                  .where((t) => t.task.status == 'pending')
+                                  .where((t) => t.task.isPendenteHoje)
                                   .length,
                               selected: _filter == 'pending',
-                              color: AppColors.pending,
-                              onTap: () =>
+                              corSelecionado: AppColors.pending,
+                              onSelected: (_) =>
                                   setState(() => _filter = 'pending'),
                             ),
                             if (_overdueCount > 0) ...[
                               const SizedBox(width: 8),
-                              _FilterChip(
+                              AppFilterChip(
                                 label: 'Atrasadas',
                                 count: _overdueCount,
                                 selected: _filter == 'overdue',
-                                color: AppColors.nonCompliant,
-                                onTap: () =>
+                                corSelecionado: AppColors.nonCompliant,
+                                onSelected: (_) =>
                                     setState(() => _filter = 'overdue'),
                               ),
                             ],
@@ -483,77 +484,6 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
   }
 }
 
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final int count;
-  final bool selected;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _FilterChip({
-    required this.label,
-    required this.count,
-    required this.selected,
-    this.color = AppColors.primary,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? color : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? color : AppColors.border,
-            width: selected ? 1.5 : 0.5,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                color: selected ? Colors.white : AppColors.textSecondary,
-              ),
-            ),
-            if (count > 0) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? Colors.white.withValues(alpha: 0.3)
-                      : color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  count.toString(),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: selected ? Colors.white : color,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Card de uma SÉRIE recorrente: um único card para todas as ocorrências,
-/// com progresso e o próximo prazo. Tocar abre a tela da série.
 class _SerieCard extends StatelessWidget {
   final TaskGroup grupo;
   final VoidCallback onTap;

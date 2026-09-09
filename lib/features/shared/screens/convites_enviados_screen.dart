@@ -5,6 +5,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/invitation.dart';
 import '../../../core/services/invitation_service.dart';
+import '../../../widgets/app_filter_chip.dart';
 
 /// Lista os convites enviados pelo usuário logado, com filtro por status.
 /// Acessível por Super Admin, Diretor e Supervisor.
@@ -131,8 +132,8 @@ class _ConvitesEnviadosScreenState extends State<ConvitesEnviadosScreen> {
                 final selected = _filter == f['value'];
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(f['label']!),
+                  child: AppFilterChip(
+                    label: f['label']!,
                     selected: selected,
                     onSelected: (_) {
                       setState(() => _filter = f['value']!);

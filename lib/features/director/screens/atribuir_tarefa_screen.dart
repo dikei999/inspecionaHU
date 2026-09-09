@@ -12,6 +12,7 @@ import '../../../core/models/sector.dart';
 import '../../../core/services/audit_service.dart';
 import '../../../core/utils/task_series_utils.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/app_filter_chip.dart';
 
 class AtribuirTarefaScreen extends StatefulWidget {
   /// Setor pré-selecionado — usado quando a tela é aberta a partir da aba
@@ -569,8 +570,8 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
                     children: AppConstants.weekDays.map((d) {
                       final v = d['value']!;
                       final sel = _diasPersonalizados.contains(v);
-                      return FilterChip(
-                        label: Text(d['label']!),
+                      return AppFilterChip(
+                        label: d['label']!,
                         selected: sel,
                         onSelected: (on) => setState(() {
                           if (on) {

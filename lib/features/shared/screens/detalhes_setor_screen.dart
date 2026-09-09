@@ -21,6 +21,7 @@ import '../../../widgets/empty_state.dart';
 import '../../../widgets/skeleton_loader.dart';
 import '../../../widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../widgets/app_filter_chip.dart';
 
 /// Tela central do modelo "Setor como unidade central".
 /// Reúne em abas tudo que pertence a um setor: dados, checklists, tarefas,
@@ -1167,12 +1168,11 @@ class _TarefasTabState extends State<_TarefasTab> {
   }
 
   Widget _statusChip(String? value, String label) {
-    final selected = _filterStatus == value;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: selected,
+      child: AppFilterChip(
+        label: label,
+        selected: _filterStatus == value,
         onSelected: (_) => setState(() => _filterStatus = value),
       ),
     );
