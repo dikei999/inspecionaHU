@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/data_source.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/skeleton_loader.dart';
@@ -66,6 +67,17 @@ class _CalendarioScreenState extends State<CalendarioScreen> {
       // Perfil ainda nao carregado: encerra o loading para
       // a tela nao ficar presa no skeleton indefinidamente.
       if (mounted) setState(() => _loading = false);
+      return;
+    }
+
+    // Offline: o calendário mostra o que foi baixado, sem consultar a rede.
+    if (DataSource.estaOffline) {
+      final locais = await DataSource.tarefasLocais();
+      if (!mounted) return;
+      setState(() {
+        _tasks = locais.map((t) => t.task).toList();
+        _loading = false;
+      });
       return;
     }
 

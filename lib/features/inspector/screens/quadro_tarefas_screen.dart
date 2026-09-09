@@ -13,6 +13,7 @@ import '../../../widgets/skeleton_loader.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../shared/widgets/dashboard_header.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../core/services/data_source.dart';
 import '../../../core/services/offline_download_service.dart';
 
 /// Task + dados de exibição (título do checklist e nome do setor).
@@ -59,6 +60,14 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
       // Perfil ainda nao carregado: encerra o loading para
       // a tela nao ficar presa no skeleton indefinidamente.
       if (mounted) setState(() => _loading = false);
+      return;
+    }
+
+    // OFFLINE: lê só do local e NÃO dispara nenhuma consulta. Não é
+    // tentar a rede e cair no cache — é não tentar. Era isso que fazia o
+    // painel exibir "Erro ao carregar tarefas" em modo avião.
+    if (DataSource.estaOffline) {
+      await _loadOffline();
       return;
     }
 
@@ -110,6 +119,24 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
         ));
       }
     }
+  }
+
+  /// Painel em modo offline: o que existe é o que foi baixado.
+  Future<void> _loadOffline() async {
+    final locais = await DataSource.tarefasLocais();
+    if (!mounted) return;
+    setState(() {
+      _tasks = locais
+          .map((t) => _TaskView(
+                task: t.task,
+                checklistTitle: t.checklistTitle,
+                sectorName: t.sectorName,
+              ))
+          .toList();
+      // Tudo que aparece offline está, por definição, baixado.
+      _baixadas = _tasks.map((t) => t.task.id).toSet();
+      _loading = false;
+    });
   }
 
   List<_TaskView> get _filtered {
@@ -381,13 +408,23 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                   Expanded(
                     child: _filtered.isEmpty
                         ? EmptyState(
-                            icon: Icons.task_alt,
-                            title: _filter == 'all'
-                                ? 'Nenhuma tarefa atribuída'
-                                : 'Nenhuma tarefa nesta categoria',
-                            subtitle: _filter == 'all'
-                                ? 'Quando um Supervisor ou Diretor atribuir uma tarefa, ela aparecerá aqui.'
-                                : 'Selecione "Todas" para ver as demais tarefas.',
+                            icon: DataSource.estaOffline
+                                ? Icons.cloud_off_outlined
+                                : Icons.task_alt,
+                            title: DataSource.estaOffline
+                                ? 'Nenhuma tarefa baixada'
+                                : _filter == 'all'
+                                    ? 'Nenhuma tarefa atribuída'
+                                    : 'Nenhuma tarefa nesta categoria',
+                            // Offline o estado vazio explica o que fazer;
+                            // nunca uma mensagem de erro de rede.
+                            subtitle: DataSource.estaOffline
+                                ? 'Sem conexão, o painel mostra apenas as '
+                                    'tarefas baixadas. Conecte-se à internet '
+                                    'para baixar as tarefas do período.'
+                                : _filter == 'all'
+                                    ? 'Quando um Supervisor ou Diretor atribuir uma tarefa, ela aparecerá aqui.'
+                                    : 'Selecione "Todas" para ver as demais tarefas.',
                           )
                         : Builder(builder: (ctx) {
                             final grupos = _grupos;
@@ -420,7 +457,11 @@ class _QuadroTarefasScreenState extends State<QuadroTarefasScreen> {
                                   taskView: tv,
                                   baixada: _baixadas.contains(tv.task.id),
                                   baixando: _baixando == tv.task.id,
-                                  onDownload: () => _toggleDownload(tv),
+                                  // Baixar exige rede: fora do ar o botão
+                                  // some em vez de falhar ao ser tocado.
+                                  onDownload: DataSource.estaOffline
+                                      ? null
+                                      : () => _toggleDownload(tv),
                                   onTap: () async {
                                     await ctx.push(
                                         AppRoutes.responderChecklist(

@@ -21,6 +21,7 @@ import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/nr32_clause_chip.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../core/services/data_source.dart';
 import '../../../core/services/offline_download_service.dart';
 import '../../../core/services/offline_store.dart';
 import '../../../core/services/offline_sync_service.dart';
@@ -120,6 +121,22 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       _initError = null;
     });
 
+    // OFFLINE: abre direto pelo pacote baixado, sem tocar na rede.
+    // Antes a tela tentava as cinco consultas, falhava e só então caía no
+    // pacote — o que gastava o timeout e podia deixar a tela em erro.
+    if (DataSource.estaOffline) {
+      final abriu = await _initFromOfflineBundle();
+      if (abriu) return;
+      if (mounted) {
+        setState(() {
+          _initError = 'Esta tarefa não foi baixada para uso offline. '
+              'Conecte-se à internet para abri-la.';
+          _loadingInit = false;
+        });
+      }
+      return;
+    }
+
     try {
       // 1. Buscar a task
       final taskData = await _db
@@ -184,7 +201,8 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       }
 
       // Pacote offline atualizado: se o Inspetor perder a rede no meio da
-      // inspeção, esta mesma tela reabre a partir daqui (6.2).
+      // inspeção, esta mesma tela reabre a partir daqui (6.2). Só faz
+      // sentido online, que é onde este trecho roda.
       await OfflineDownloadService.downloadTask(widget.taskId);
 
       if (mounted) setState(() => _loadingInit = false);
@@ -649,6 +667,18 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
 
   Future<void> _submit() async {
     if (_inspection == null) return;
+
+    // Finalizar fecha a inspeção e grava o relatório no servidor — não tem
+    // equivalente local. Offline, avisa em vez de falhar: as respostas já
+    // estão salvas no aparelho e sobem sozinhas ao reconectar.
+    if (DataSource.estaOffline) {
+      showActionFeedback(
+        context,
+        'Sem conexão para finalizar. As respostas estão salvas neste '
+        'aparelho e o envio acontece quando a internet voltar.',
+      );
+      return;
+    }
 
     // Valida que todos os itens foram respondidos
     for (int i = 0; i < _items.length; i++) {

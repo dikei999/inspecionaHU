@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/models/profile.dart';
+import '../../../core/services/data_source.dart';
 import '../../../core/services/offline_store.dart';
 import '../../../core/utils/cpf_utils.dart';
 
@@ -17,7 +18,18 @@ class AuthProvider extends ChangeNotifier {
 
   /// Entrou com o perfil em cache porque não havia rede (6.1).
   /// A UI usa para mostrar a faixa de status; o app funciona normalmente.
-  bool _offlineMode = false;
+  bool _offlineModeInterno = false;
+
+  /// Toda escrita passa por aqui, e é aqui que o DataSource é avisado.
+  ///
+  /// Antes eram nove atribuições espalhadas; bastava esquecer uma para o
+  /// DataSource ficar com o modo errado e uma tela voltar a consultar a
+  /// rede sem conexão. Com o setter isso não tem como acontecer.
+  set _offlineMode(bool valor) {
+    _offlineModeInterno = valor;
+    DataSource.definirModoOffline(valor);
+  }
+
 
   /// true só durante um signOut() explícito. É o que separa "o usuário saiu"
   /// de "a renovação do token falhou sem rede" no listener de auth.
@@ -35,7 +47,8 @@ class AuthProvider extends ChangeNotifier {
 
   AuthStatus get status => _status;
   Profile? get profile => _profile;
-  bool get offlineMode => _offlineMode;
+  bool get offlineMode => _offlineModeInterno;
+
 
   final _supabase = Supabase.instance.client;
 
@@ -169,7 +182,7 @@ class AuthProvider extends ChangeNotifier {
   /// Volta ao normal quando a rede retorna: tenta renovar a sessão e, dando
   /// certo, recarrega o perfil do servidor e sai do modo offline sozinho.
   Future<void> tentarSairDoModoOffline() async {
-    if (!_offlineMode) return;
+    if (!_offlineModeInterno) return;
 
     try {
       if (_supabase.auth.currentSession == null) {
@@ -258,7 +271,7 @@ class AuthProvider extends ChangeNotifier {
   /// Passa por tentarSairDoModoOffline() porque a sessão pode ter sido
   /// descartada junto com o token expirado e precisa ser renovada antes.
   Future<void> revalidateProfileIfOffline() async {
-    if (!_offlineMode) return;
+    if (!_offlineModeInterno) return;
     // Entrou pelo botão: não sai daqui por conta própria. O connectivity_plus
     // acusa "conectado" com Wi-Fi sem internet, e a tentativa de renovar a
     // sessão devolvia erro de token na cara do usuário.

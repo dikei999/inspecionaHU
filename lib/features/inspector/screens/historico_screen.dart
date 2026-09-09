@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/data_source.dart';
 import '../../../core/utils/app_date_utils.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/skeleton_loader.dart';
@@ -35,6 +36,19 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       // Perfil ainda nao carregado: encerra o loading para
       // a tela nao ficar presa no skeleton indefinidamente.
       if (mounted) setState(() => _loading = false);
+      return;
+    }
+
+    // O histórico é consulta ao servidor e não tem equivalente local: o que
+    // foi enviado vive lá. Offline a tela explica isso, em vez de tentar a
+    // rede e falhar.
+    if (DataSource.estaOffline) {
+      if (mounted) {
+        setState(() {
+          _entries = [];
+          _loading = false;
+        });
+      }
       return;
     }
 
@@ -146,10 +160,17 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
           : RefreshIndicator(
               onRefresh: _load,
               child: _entries.isEmpty
-                  ? const EmptyState(
-                      icon: Icons.history_toggle_off,
-                      title: 'Nenhuma inspeção enviada ainda',
-                      subtitle: 'Após enviar uma inspeção ela aparecerá aqui.',
+                  ? EmptyState(
+                      icon: DataSource.estaOffline
+                          ? Icons.cloud_off_outlined
+                          : Icons.history_toggle_off,
+                      title: DataSource.estaOffline
+                          ? 'Histórico indisponível offline'
+                          : 'Nenhuma inspeção enviada ainda',
+                      subtitle: DataSource.estaOffline
+                          ? 'O histórico fica no servidor. Conecte-se à '
+                              'internet para consultá-lo.'
+                          : 'Após enviar uma inspeção ela aparecerá aqui.',
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.all(16),

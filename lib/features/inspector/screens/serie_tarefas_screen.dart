@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 
 import '../../../app/routes.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/data_source.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/app_date_utils.dart';
@@ -39,6 +40,23 @@ class _SerieTarefasScreenState extends State<SerieTarefasScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
+
+    // Offline: as ocorrências saem dos pacotes baixados.
+    if (DataSource.estaOffline) {
+      final locais = await DataSource.serieLocal(widget.seriesId);
+      if (!mounted) return;
+      setState(() {
+        _tasks = locais.map((t) => t.task).toList()
+          ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+        if (locais.isNotEmpty) {
+          _checklistTitle = locais.first.checklistTitle;
+          _sectorName = locais.first.sectorName;
+        }
+        _loading = false;
+      });
+      return;
+    }
+
     try {
       final rows = await _db
           .from('tasks')
@@ -110,12 +128,18 @@ class _SerieTarefasScreenState extends State<SerieTarefasScreen> {
       body: _loading
           ? const SkeletonList(itemHeight: 76)
           : _tasks.isEmpty
-              ? const EmptyState(
-                  icon: Icons.event_repeat_outlined,
-                  title: 'Série sem ocorrências',
-                  subtitle:
-                      'As ocorrências desta série foram canceladas ou não '
-                      'existem mais.',
+              ? EmptyState(
+                  icon: DataSource.estaOffline
+                      ? Icons.cloud_off_outlined
+                      : Icons.event_repeat_outlined,
+                  title: DataSource.estaOffline
+                      ? 'Nenhuma ocorrência baixada'
+                      : 'Série sem ocorrências',
+                  subtitle: DataSource.estaOffline
+                      ? 'Sem conexão, aparecem apenas as ocorrências '
+                          'baixadas desta série.'
+                      : 'As ocorrências desta série foram canceladas ou não '
+                          'existem mais.',
                 )
               : RefreshIndicator(
                   onRefresh: _load,
