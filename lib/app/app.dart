@@ -13,6 +13,7 @@ import '../features/shared/screens/notificacoes_screen.dart';
 import '../features/shared/screens/convidar_usuario_screen.dart';
 import '../features/shared/screens/convites_enviados_screen.dart';
 import '../features/shared/screens/detalhes_setor_screen.dart';
+import '../features/shared/screens/tarefa_detalhes_screen.dart';
 import '../features/shared/screens/relatorios_analises_screen.dart';
 import '../features/shared/screens/configuracoes_screen.dart';
 // Super Admin
@@ -216,6 +217,15 @@ class _AppState extends State<App> {
         path: '/setor/:sectorId',
         builder: (context, state) => DetalhesSetorScreen(
           sectorId: state.pathParameters['sectorId']!,
+        ),
+      ),
+      // Detalhes de UMA tarefa, somente leitura — Diretor e Supervisor
+      // (item 2 da revisão: substitui o destino que antes era a tela de
+      // resposta do Inspetor).
+      GoRoute(
+        path: '/tarefa/:taskId',
+        builder: (context, state) => TarefaDetalhesScreen(
+          taskId: state.pathParameters['taskId']!,
         ),
       ),
 

@@ -991,25 +991,65 @@ class _TarefasTabState extends State<_TarefasTab> {
     }).toList();
   }
 
-  Future<void> _abrirRelatorio(Task task) async {
-    try {
-      final insp = await _db
-          .from('inspections')
-          .select('id')
-          .eq('task_id', task.id)
-          .order('created_at', ascending: false)
-          .limit(1);
-      if (insp.isNotEmpty && mounted) {
-        context.push(AppRoutes.relatorioIndividual(insp.first['id'] as String));
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Erro ao abrir o relatório.'),
-          backgroundColor: AppColors.nonCompliant,
-        ));
-      }
-    }
+  /// Lista as ocorrências da série em modo leitura (item 2 da revisão).
+  ///
+  /// Antes tocar na série levava a AppRoutes.serieTarefas — a tela do
+  /// Inspetor, de onde se RESPONDE. Aqui cada ocorrência abre os detalhes
+  /// somente leitura da tarefa (checklist, inspetor, prazo, situação e o
+  /// relatório quando já houver envio).
+  void _abrirOcorrenciasDaSerie(TaskGroup grupo) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                grupo.checklistTitle,
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Série de tarefas · ${grupo.progresso}',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: grupo.tasks.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final t = grupo.tasks[i];
+                    return ListTile(
+                      title: Text(
+                        'Ocorrência ${t.seriesIndex ?? i + 1} de '
+                        '${t.seriesTotal ?? grupo.tasks.length}',
+                      ),
+                      subtitle: Text(AppDateUtils.formatDate(t.dueDate)),
+                      trailing: StatusBadge(
+                        status: t.isOverdue ? 'overdue' : t.status,
+                        compact: true,
+                      ),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        context.push(AppRoutes.tarefaDetalhes(t.id));
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _atribuirTarefa() async {
@@ -1164,18 +1204,20 @@ class _TarefasTabState extends State<_TarefasTab> {
                                     if (g.isSerie) {
                                       return _SerieSetorCard(
                                         grupo: g,
-                                        onTap: () => context.push(
-                                            AppRoutes.serieTarefas(
-                                                g.seriesId!)),
+                                        // Item 2 (revisão): antes ia para
+                                        // AppRoutes.serieTarefas, a tela do
+                                        // Inspetor — tocar numa ocorrência
+                                        // lá abria a tela de RESPONDER.
+                                        // Agora abre a lista de ocorrências
+                                        // em modo leitura; cada uma leva
+                                        // aos detalhes da tarefa.
+                                        onTap: () =>
+                                            _abrirOcorrenciasDaSerie(g),
                                       );
                                     }
                                     final tv = monthTasks.firstWhere(
                                         (v) => v.task.id == g.unica.id);
-                                    return _SectorTaskCard(
-                                      view: tv,
-                                      onOpenReport: () =>
-                                          _abrirRelatorio(tv.task),
-                                    );
+                                    return _SectorTaskCard(view: tv);
                                   }),
                                 const SizedBox(height: 8),
                               ],
@@ -1353,19 +1395,23 @@ class _SerieSetorCard extends StatelessWidget {
 
 class _SectorTaskCard extends StatelessWidget {
   final _SectorTaskView view;
-  final VoidCallback onOpenReport;
 
-  const _SectorTaskCard({required this.view, required this.onOpenReport});
+  const _SectorTaskCard({required this.view});
 
   @override
   Widget build(BuildContext context) {
     final task = view.task;
-    final concluida = task.status == 'submitted' || task.status == 'validated';
 
+    // Item 2 (revisão): tocar SEMPRE abre os detalhes da tarefa, somente
+    // leitura — antes, tarefa não concluída não fazia nada, e a concluída
+    // ia direto pro relatório. Agora Supervisor/Diretor sempre veem
+    // checklist, inspetor, prazo e situação, com o relatório dentro dessa
+    // mesma tela quando já houver envio. Nunca a tela de responder, que é
+    // do Inspetor.
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(AppDimensions.radiusCard),
-        onTap: concluida ? onOpenReport : null,
+        onTap: () => context.push(AppRoutes.tarefaDetalhes(task.id)),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(

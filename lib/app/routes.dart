@@ -11,6 +11,11 @@ class AppRoutes {
   static const perfil = '/perfil';
   /// Detalhes do setor — hub central (Diretor e Supervisor).
   static String detalhesSetor(String sectorId) => '/setor/$sectorId';
+
+  /// Detalhes de UMA tarefa, somente leitura — Diretor e Supervisor.
+  /// Item 2 (revisão): antes tocar numa tarefa levava para a tela de
+  /// resposta (do Inspetor), que dava "erro ao responder checklist".
+  static String tarefaDetalhes(String taskId) => '/tarefa/$taskId';
   static const notificacoes = '/notificacoes';
   static const convidarUsuario = '/convidar-usuario';
 
