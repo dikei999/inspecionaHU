@@ -478,13 +478,12 @@ class _DayTaskCard extends StatelessWidget {
   final Task task;
   const _DayTaskCard({required this.task});
 
+  // A situação vem do modelo. Aqui havia uma cópia da regra usando
+  // isBefore(now), que marcava como atrasada a tarefa com prazo HOJE logo
+  // depois da meia-noite — o mesmo defeito já corrigido em Task.
   Color get _statusColor {
-    final now = DateTime.now();
-    if (task.dueDate.isBefore(now) &&
-        task.status != 'submitted' &&
-        task.status != 'validated') {
-      return AppColors.statusOverdue;
-    }
+    if (task.isOverdue) return AppColors.statusOverdue;
+    if (task.isAgendada) return AppColors.textSecondary;
     switch (task.status) {
       case 'in_progress':
         return AppColors.statusInProgress;
@@ -498,12 +497,8 @@ class _DayTaskCard extends StatelessWidget {
   }
 
   String get _statusLabel {
-    final now = DateTime.now();
-    if (task.dueDate.isBefore(now) &&
-        task.status != 'submitted' &&
-        task.status != 'validated') {
-      return 'Atrasada';
-    }
+    if (task.isOverdue) return 'Atrasada';
+    if (task.isAgendada) return 'Agendada';
     switch (task.status) {
       case 'pending':
         return 'Pendente';
@@ -545,9 +540,43 @@ class _DayTaskCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Tarefa ${task.displayCode}',
-                  style: Theme.of(context).textTheme.titleSmall,
+                Row(
+                  children: [
+                    Text(
+                      'Tarefa ${task.displayCode}',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    // O calendário filtra por DIA, então uma série nunca
+                    // repete aqui — mas o card diz que a ocorrência
+                    // pertence a uma, e qual é a posição dela.
+                    if (task.seriesLabel != null) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.event_repeat_outlined,
+                                size: 10, color: AppColors.primary),
+                            const SizedBox(width: 3),
+                            Text(
+                              task.seriesLabel!,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Row(

@@ -22,6 +22,7 @@ import '../../../widgets/skeleton_loader.dart';
 import '../../../widgets/status_badge.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../widgets/app_filter_chip.dart';
+import '../../../core/models/task_series.dart';
 
 /// Tela central do modelo "Setor como unidade central".
 /// Reúne em abas tudo que pertence a um setor: dados, checklists, tarefas,
@@ -1150,11 +1151,26 @@ class _TarefasTabState extends State<_TarefasTab> {
                                   ),
                                 ),
                                 if (!collapsed)
-                                  ...monthTasks.map((tv) => _SectorTaskCard(
-                                        view: tv,
-                                        onOpenReport: () =>
-                                            _abrirRelatorio(tv.task),
-                                      )),
+                                  // Série vira UM card, como no painel do
+                                  // Inspetor. Antes as ocorrências vinham
+                                  // soltas, repetindo o mesmo título.
+                                  ..._agruparMes(monthTasks).map((g) {
+                                    if (g.isSerie) {
+                                      return _SerieSetorCard(
+                                        grupo: g,
+                                        onTap: () => context.push(
+                                            AppRoutes.serieTarefas(
+                                                g.seriesId!)),
+                                      );
+                                    }
+                                    final tv = monthTasks.firstWhere(
+                                        (v) => v.task.id == g.unica.id);
+                                    return _SectorTaskCard(
+                                      view: tv,
+                                      onOpenReport: () =>
+                                          _abrirRelatorio(tv.task),
+                                    );
+                                  }),
                                 const SizedBox(height: 8),
                               ],
                             );
@@ -1164,6 +1180,17 @@ class _TarefasTabState extends State<_TarefasTab> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Agrupa as tarefas de um mês: série vira um grupo, avulsa fica sozinha.
+  List<TaskGroup> _agruparMes(List<_SectorTaskView> mes) {
+    final vistas = {for (final v in mes) v.task.id: v};
+    return TaskGroup.agrupar(
+      mes.map((v) => v.task).toList(),
+      checklistTitle: (t) =>
+          vistas[t.id]?.checklist?.title ?? 'Checklist removido',
+      sectorName: (t) => '',
     );
   }
 
@@ -1184,6 +1211,138 @@ class _SectorTaskView {
   final Checklist? checklist;
   final Profile? inspector;
   _SectorTaskView({required this.task, this.checklist, this.inspector});
+}
+
+/// Card de uma SÉRIE na aba Tarefas do setor.
+///
+/// Mesmo princípio do painel do Inspetor: um card por série, com progresso
+/// e próximo prazo, abrindo a lista de ocorrências.
+class _SerieSetorCard extends StatelessWidget {
+  final TaskGroup grupo;
+  final VoidCallback onTap;
+
+  const _SerieSetorCard({required this.grupo, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final proxima = grupo.proxima;
+    final temAtraso = grupo.atrasadas > 0;
+
+    final cor = temAtraso
+        ? AppColors.nonCompliant
+        : grupo.concluida
+            ? AppColors.compliant
+            : AppColors.primary;
+
+    final situacao = temAtraso
+        ? '${grupo.atrasadas} atrasada(s)'
+        : grupo.concluida
+            ? 'Série concluída'
+            : proxima != null
+                ? 'Próxima em ${AppDateUtils.formatDate(proxima.dueDate)}'
+                : 'Sem ocorrências abertas';
+
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppDimensions.radiusCard),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 4,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: cor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            grupo.checklistTitle,
+                            style: Theme.of(context).textTheme.titleSmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary50,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.event_repeat_outlined,
+                                  size: 11, color: AppColors.primary),
+                              const SizedBox(width: 4),
+                              Text(
+                                grupo.progresso,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(
+                          temAtraso
+                              ? Icons.warning_amber_rounded
+                              : grupo.concluida
+                                  ? Icons.check_circle_outline
+                                  : Icons.calendar_today_outlined,
+                          size: 13,
+                          color: cor,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          situacao,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: cor),
+                        ),
+                        if (grupo.agendadas > 0) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            '· ${grupo.agendadas} agendada(s)',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: AppColors.textDisabled),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right,
+                  size: 18, color: AppColors.textSecondary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SectorTaskCard extends StatelessWidget {

@@ -336,9 +336,46 @@ class _CalendarioInstitucionalScreenState
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
-                          title: Text('Tarefa ${task.displayCode}',
-                              style:
-                                  Theme.of(context).textTheme.titleMedium),
+                          // O calendário filtra por DIA: uma série nunca
+                          // repete aqui. O selo apenas informa que a
+                          // ocorrência pertence a uma, e sua posição.
+                          title: Row(
+                            children: [
+                              Flexible(
+                                child: Text('Tarefa ${task.displayCode}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium),
+                              ),
+                              if (task.seriesLabel != null) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.event_repeat_outlined,
+                                          size: 10, color: AppColors.primary),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        task.seriesLabel!,
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                           subtitle: StatusBadge(
                             status: task.isOverdue ? 'overdue' : task.status,
                             compact: true,
