@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
@@ -98,8 +97,19 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
   static const _maxSaveAttempts = 3;
 
   // ── Conectividade ──────────────────────────────────────────────────────────
-  bool _isOnline = true;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  //
+  // Causa raiz do item 1 (auditoria set/2026): esta tela tinha o PRÓPRIO
+  // listener de Connectivity().onConnectivityChanged, independente do
+  // OfflineSyncService global, com o próprio bool _isOnline começando
+  // como `true` até a checagem assíncrona resolver. Duas fontes de
+  // verdade — cada uma podia dizer algo diferente da outra, e a
+  // inicialização otimista (`true`) abria uma janela real: responder um
+  // item nesse intervalo tentava o caminho ONLINE sem rede de fato.
+  //
+  // Agora não há estado próprio: a tela observa OfflineSyncService.online,
+  // que já faz prova de vida real (não só a interface) e é a MESMA fonte
+  // que a faixa global usa. Uma verdade só.
+  bool get _isOnline => OfflineSyncService.online.value;
 
   /// Quantas respostas DESTA inspeção estão gravadas na fila em disco
   /// aguardando rede. É informação, não pendência: gravar na fila JÁ é
@@ -115,7 +125,7 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
 
   @override
   void dispose() {
-    _connectivitySub?.cancel();
+    OfflineSyncService.online.removeListener(_onOnlineChanged);
     for (final t in _debounceTimers.values) {
       t.cancel();
     }
@@ -387,39 +397,56 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
 
   // ── Conectividade ──────────────────────────────────────────────────────────
 
+  bool _foiOnlineDaUltimaVez = true;
+
+  /// Observa a MESMA fonte que a faixa global usa — OfflineSyncService,
+  /// que confirma conexão real (não só a interface) e já dispara sua
+  /// própria drenagem (transição + heartbeat periódico, item 1 da
+  /// auditoria). Esta tela só reage à mudança para atualizar os itens
+  /// que ela mesma enfileirou; não duplica a decisão de sincronizar.
   void _watchConnectivity() {
-    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
-      final online = results.any((r) => r != ConnectivityResult.none);
-      final wasOffline = !_isOnline;
-      if (!mounted) return;
-      setState(() => _isOnline = online);
-
-      if (online && wasOffline) {
-        // Uma fila só: a de disco. Ela cobre respostas E fotos, é
-        // idempotente por (inspeção, item) e sobrevive a fechar o app.
-        // A antiga fila em memória desta tela foi removida — as duas
-        // drenavam a mesma inspeção sem se conhecer.
-        _sincronizarFilaLocal();
-      }
-    });
-
-    Connectivity().checkConnectivity().then((results) {
-      if (!mounted) return;
-      setState(() {
-        _isOnline = results.any((r) => r != ConnectivityResult.none);
-      });
-    });
+    _foiOnlineDaUltimaVez = OfflineSyncService.online.value;
+    OfflineSyncService.online.addListener(_onOnlineChanged);
   }
 
-  /// Drena a fila em disco e reflete o resultado nos itens desta tela.
+  void _onOnlineChanged() {
+    if (!mounted) return;
+    final agora = OfflineSyncService.online.value;
+    final voltou = agora && !_foiOnlineDaUltimaVez;
+    _foiOnlineDaUltimaVez = agora;
+    setState(() {}); // reflete o novo _isOnline (getter) na tela
+
+    if (voltou) {
+      // O OfflineSyncService global já está sincronizando (ou vai
+      // terminar em instantes); aqui só refletimos o resultado nos itens
+      // desta tela quando ele terminar.
+      _sincronizarFilaLocal();
+    }
+  }
+
+  /// Reflete nos itens desta tela o que a sincronização (global, disparada
+  /// pelo OfflineSyncService) já drenou da fila.
+  ///
+  /// NÃO chama syncPending() de novo: o serviço global já está sincronizando
+  /// nesse exato momento (foi o próprio evento online dele que acionou este
+  /// listener). Chamar de novo aqui esbarraria no guard `if (_syncing)
+  /// return` e voltaria vazio sempre — a tela ficaria achando que nada foi
+  /// enviado mesmo quando o envio aconteceu.
   Future<void> _sincronizarFilaLocal() async {
-    final r = await OfflineSyncService.syncPending();
+    if (_inspection == null) return;
+
+    // Espera o serviço global terminar a rodada em curso, com um teto —
+    // nunca trava a tela indefinidamente se algo external cancelar o sync.
+    var esperas = 0;
+    while (OfflineSyncService.syncing.value && esperas < 100) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      esperas++;
+      if (!mounted) return;
+    }
     if (!mounted) return;
 
     await _atualizarContagemLocal();
     if (!mounted) return;
-
-    if (r.enviadas == 0) return;
 
     // Não presume: relê a fila e marca como enviado só o item que REALMENTE
     // saiu dela. O que falhou continua sinalizado.
@@ -428,6 +455,7 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
         .toSet();
     if (!mounted) return;
 
+    var algumEnviado = false;
     setState(() {
       for (final entry in _responses.entries) {
         final st = entry.value;
@@ -435,11 +463,15 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
             st.saveState != SaveState.error) {
           continue;
         }
-        st.saveState =
-            aindaNaFila.contains(entry.key) ? st.saveState : SaveState.saved;
+        if (!aindaNaFila.contains(entry.key)) {
+          st.saveState = SaveState.saved;
+          algumEnviado = true;
+        }
       }
     });
-    showActionFeedback(context, 'Respostas enviadas ao servidor.');
+    if (algumEnviado && mounted) {
+      showActionFeedback(context, 'Respostas enviadas ao servidor.');
+    }
   }
 
   // ── Auto-save resiliente (retry com backoff exponencial) ──────────────────
