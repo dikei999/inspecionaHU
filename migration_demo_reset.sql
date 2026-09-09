@@ -40,6 +40,7 @@ DECLARE
 
   v_fotos        INT := 0;
   v_respostas    INT := 0;
+  v_relatorios   INT := 0;
   v_inspecoes    INT := 0;
   v_tarefas      INT := 0;
   v_itens        INT := 0;
@@ -95,12 +96,21 @@ BEGIN
     AND i.hospital_id = v_hospital_id;
   GET DIAGNOSTICS v_respostas = ROW_COUNT;
 
-  -- ── 3. Inspeções ───────────────────────────────────────────
+  -- ── 3. Relatórios em cache ──────────────────────────────────
+  -- PRECISA vir ANTES de apagar inspections: reports.inspection_id
+  -- referencia inspections.id (reports_inspection_id_fkey, NOT NULL,
+  -- sem ON DELETE CASCADE). A ordem antiga apagava inspections primeiro
+  -- e a função inteira abortava com 23503 ("update or delete on table
+  -- inspections violates foreign key constraint") — a causa exata do
+  -- botão "Limpar dados demo" continuar falhando depois da correção
+  -- anterior (que só tinha resolvido o bloqueio do Storage, item
+  -- diferente). Confirmado reproduzindo a chamada direto contra o banco.
+  DELETE FROM reports WHERE hospital_id = v_hospital_id;
+  GET DIAGNOSTICS v_relatorios = ROW_COUNT;
+
+  -- ── 4. Inspeções ───────────────────────────────────────────
   DELETE FROM inspections WHERE hospital_id = v_hospital_id;
   GET DIAGNOSTICS v_inspecoes = ROW_COUNT;
-
-  -- ── 4. Relatórios em cache (se a tabela tiver linhas demo) ──
-  DELETE FROM reports WHERE hospital_id = v_hospital_id;
 
   -- ── 5. Tarefas ─────────────────────────────────────────────
   DELETE FROM tasks WHERE hospital_id = v_hospital_id;
@@ -171,6 +181,7 @@ BEGIN
     'hospital', 'HU-DEMO',
     'fotos_storage', v_fotos,
     'respostas', v_respostas,
+    'relatorios', v_relatorios,
     'inspecoes', v_inspecoes,
     'tarefas', v_tarefas,
     'itens_checklist', v_itens,
