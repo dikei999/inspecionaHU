@@ -23,6 +23,10 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
   bool _loading = true;
   List<_InspectionEntry> _entries = [];
 
+  /// Histórico agrupado por série: uma recorrência é um card só, como no
+  /// quadro de tarefas. Inspeção avulsa segue card individual (A3).
+  List<_HistoryGroup> get _grupos => _HistoryGroup.agrupar(_entries);
+
   @override
   void initState() {
     super.initState();
@@ -31,7 +35,8 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final uid = context.read<AuthProvider>().profile?.id;
+    final perfil = context.read<AuthProvider>().profile;
+    final uid = perfil?.id;
     if (uid == null) {
       // Perfil ainda nao carregado: encerra o loading para
       // a tela nao ficar presa no skeleton indefinidamente.
@@ -54,12 +59,19 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
 
     try {
       // Busca inspeções submetidas/validadas do inspetor
-      final data = await _db
+      // hospital_id explicito: a RLS ja isola o Inspetor as proprias
+      // inspecoes, mas a regra de ouro do projeto e que TODA query filtre
+      // o hospital. Esta era a unica consulta desta tela que nao filtrava.
+      final hospitalId = perfil?.hospitalId;
+      var query = _db
           .from('inspections')
           .select()
           .eq('inspector_id', uid)
-          .inFilter('overall_status', ['submitted', 'validated'])
-          .order('submitted_at', ascending: false);
+          .inFilter('overall_status', ['submitted', 'validated']);
+      if (hospitalId != null) {
+        query = query.eq('hospital_id', hospitalId);
+      }
+      final data = await query.order('submitted_at', ascending: false);
 
       if ((data as List).isEmpty) {
         if (mounted) {
@@ -94,6 +106,27 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
           .select('inspection_id, compliance_rate')
           .inFilter('inspection_id', inspectionIds);
 
+      // Serie de cada inspecao: o historico listava ocorrencias soltas
+      // enquanto o quadro de tarefas ja agrupava (A3).
+      final taskIds = data
+          .map((e) => e['task_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
+      final seriePorTask = <String, Map<String, dynamic>>{};
+      if (taskIds.isNotEmpty) {
+        var tq = _db
+            .from('tasks')
+            .select('id, series_id, series_total')
+            .inFilter('id', taskIds);
+        if (hospitalId != null) {
+          tq = tq.eq('hospital_id', hospitalId);
+        }
+        for (final t in await tq) {
+          seriePorTask[t['id'] as String] = t;
+        }
+      }
+
       // Mapeia por id
       final checklistMap = <String, String>{
         for (final c in checklistsData as List)
@@ -113,6 +146,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         setState(() {
           _entries = data.map((e) {
             final id = e['id'] as String;
+            final serie = seriePorTask[e['task_id'] as String?];
             return _InspectionEntry(
               id: id,
               checklistTitle:
@@ -127,6 +161,8 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
                   ? DateTime.parse(e['validated_at'] as String)
                   : null,
               complianceRate: rateMap[id],
+              seriesId: serie?['series_id'] as String?,
+              seriesTotal: (serie?['series_total'] as num?)?.toInt(),
             );
           }).toList();
           _loading = false;
@@ -174,9 +210,10 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.all(16),
-                      itemCount: _entries.length,
+                      itemCount: _grupos.length,
                       separatorBuilder: (_, i) => const SizedBox(height: 10),
-                      itemBuilder: (_, i) => _EntryCard(entry: _entries[i]),
+                      itemBuilder: (_, i) =>
+                          _GroupCard(grupo: _grupos[i]),
                     ),
             ),
     );
@@ -195,6 +232,10 @@ class _InspectionEntry {
   final DateTime? validatedAt;
   final double? complianceRate;
 
+  /// Serie da tarefa que gerou a inspecao. null = avulsa.
+  final String? seriesId;
+  final int? seriesTotal;
+
   const _InspectionEntry({
     required this.id,
     required this.checklistTitle,
@@ -203,7 +244,120 @@ class _InspectionEntry {
     this.submittedAt,
     this.validatedAt,
     this.complianceRate,
+    this.seriesId,
+    this.seriesTotal,
   });
+}
+
+/// Um card do historico: uma serie inteira ou uma inspecao avulsa (A3).
+class _HistoryGroup {
+  final String? seriesId;
+  final List<_InspectionEntry> entradas;
+
+  const _HistoryGroup({required this.seriesId, required this.entradas});
+
+  bool get isSerie => seriesId != null && entradas.length > 1;
+
+  _InspectionEntry get principal => entradas.first;
+
+  int get total {
+    final declarado = principal.seriesTotal;
+    if (declarado != null && declarado >= entradas.length) return declarado;
+    return entradas.length;
+  }
+
+  String get progresso => '${entradas.length} de $total';
+
+  /// Agrupa preservando a ordem de chegada (mais recente primeiro), que ja
+  /// vem ordenada por submitted_at desc.
+  static List<_HistoryGroup> agrupar(List<_InspectionEntry> entradas) {
+    final porSerie = <String, List<_InspectionEntry>>{};
+    final ordem = <String>[];
+    final saida = <_HistoryGroup>[];
+
+    for (final e in entradas) {
+      final sid = e.seriesId;
+      if (sid == null) {
+        saida.add(_HistoryGroup(seriesId: null, entradas: [e]));
+      } else {
+        if (!porSerie.containsKey(sid)) {
+          porSerie[sid] = [];
+          ordem.add(sid);
+          // Marca o lugar da serie na lista pela PRIMEIRA ocorrencia vista,
+          // que e a mais recente: a serie nao pula para o topo nem afunda.
+          saida.add(_HistoryGroup(seriesId: sid, entradas: porSerie[sid]!));
+        }
+        porSerie[sid]!.add(e);
+      }
+    }
+    return saida;
+  }
+}
+
+// ── Card do grupo: série ou inspeção avulsa ───────────────────────────────────
+
+class _GroupCard extends StatelessWidget {
+  final _HistoryGroup grupo;
+  const _GroupCard({required this.grupo});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!grupo.isSerie) return _EntryCard(entry: grupo.principal);
+
+    final principal = grupo.principal;
+    return Card(
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: const Icon(
+            Icons.repeat_rounded,
+            size: 20,
+            color: AppColors.primary,
+          ),
+          title: Text(
+            principal.checklistTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          subtitle: Text(
+            principal.sectorName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: AppColors.textSecondary),
+          ),
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.primary50,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              grupo.progresso,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.primary700,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+          children: [
+            for (final e in grupo.entradas)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _EntryCard(entry: e),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ── Card de inspeção ──────────────────────────────────────────────────────────

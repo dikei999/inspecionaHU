@@ -78,16 +78,59 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
     }).toList();
   }
 
+  /// Agrupa os relatórios filtrados por SÉRIE (A3).
+  ///
+  /// Mesma ideia do quadro de tarefas: uma recorrência é uma coisa só, não
+  /// catorze. O agrupamento vem ANTES do agrupamento por data porque as
+  /// ocorrências caem em dias diferentes; o grupo se posiciona na linha do
+  /// tempo pela data do relatório mais recente.
+  ///
+  /// Os filtros e a busca continuam agindo antes disto, sobre relatórios
+  /// individuais: filtrar por setor ou buscar por nome segue funcionando
+  /// exatamente como antes, e uma série entra no resultado quando alguma de
+  /// suas ocorrências entra.
+  List<_ReportGroup> get _agrupadosPorSerie {
+    final porSerie = <String, List<_RecentInspection>>{};
+    final avulsos = <_RecentInspection>[];
+
+    for (final r in _relatoriosFiltrados) {
+      final sid = r.seriesId;
+      if (sid == null) {
+        avulsos.add(r);
+      } else {
+        porSerie.putIfAbsent(sid, () => []).add(r);
+      }
+    }
+
+    int porDataDesc(_RecentInspection a, _RecentInspection b) {
+      final da = a.submittedAt, db = b.submittedAt;
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return db.compareTo(da);
+    }
+
+    return <_ReportGroup>[
+      for (final e in porSerie.entries)
+        _ReportGroup(
+          seriesId: e.key,
+          relatorios: e.value..sort(porDataDesc),
+        ),
+      for (final r in avulsos)
+        _ReportGroup(seriesId: null, relatorios: [r]),
+    ];
+  }
+
   /// Agrupa por dia, preservando a ordem (mais recente primeiro).
   /// Sem isso a aba é uma coluna longa sem ponto de referência.
-  List<MapEntry<DateTime, List<_RecentInspection>>> get _agrupadosPorData {
-    final grupos = <DateTime, List<_RecentInspection>>{};
-    for (final r in _relatoriosFiltrados) {
-      final d = r.submittedAt;
+  List<MapEntry<DateTime, List<_ReportGroup>>> get _agrupadosPorData {
+    final grupos = <DateTime, List<_ReportGroup>>{};
+    for (final g in _agrupadosPorSerie) {
+      final d = g.dataReferencia;
       final chave = d == null
           ? DateTime.fromMillisecondsSinceEpoch(0)
           : DateTime(d.year, d.month, d.day);
-      grupos.putIfAbsent(chave, () => []).add(r);
+      grupos.putIfAbsent(chave, () => []).add(g);
     }
     final entradas = grupos.entries.toList()
       ..sort((a, b) => b.key.compareTo(a.key));
@@ -155,6 +198,9 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
         reportsQuery =
             reportsQuery.not('inspection_id', 'in', archivedInspections);
       }
+      // As três consultas seguintes são independentes entre si e antes
+      // saíam em série, uma esperando a anterior. Em paralelo, a abertura
+      // da tela custa o tempo da mais lenta, não a soma das três (D3).
       final reports = await reportsQuery;
 
       // Fonte única: taxa agregada por ITEM, a mesma que o donut usa.
@@ -196,7 +242,7 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
       var recentQuery = _db
           .from('inspections')
           .select('id, sector_id, checklist_id, submitted_at, '
-              'overall_status, archived_at')
+              'overall_status, archived_at, task_id')
           .eq('hospital_id', hospitalId)
           .inFilter('overall_status', ['submitted', 'validated']);
       if (sectorIds != null) {
@@ -231,31 +277,59 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
       final recentIds = recentList.map((e) => e['id'] as String).toList();
       final metricas = <String, _ReportMetrics>{};
       if (recentIds.isNotEmpty) {
-        final reportRows = await _db
-            .from('reports')
-            .select('inspection_id, compliance_rate, non_compliant')
-            .inFilter('inspection_id', recentIds);
+        // Métricas e fotos dependem só de recentIds: saem juntas (D3).
+        final resultados = await Future.wait([
+          _db
+              .from('reports')
+              .select('inspection_id, compliance_rate, non_compliant, compliant')
+              .inFilter('inspection_id', recentIds),
+          _db
+              .from('inspection_responses')
+              .select('inspection_id, photo_url')
+              .inFilter('inspection_id', recentIds)
+              .not('photo_url', 'is', null),
+        ]);
+        final reportRows = resultados[0];
+        final fotoRows = resultados[1];
+
         for (final r in reportRows) {
           metricas[r['inspection_id'] as String] = _ReportMetrics(
             complianceRate: (r['compliance_rate'] as num?)?.toDouble(),
             nonCompliant: (r['non_compliant'] as num? ?? 0).toInt(),
+            compliant: (r['compliant'] as num? ?? 0).toInt(),
           );
         }
 
         // Fotos: uma única varredura, só a coluna necessária.
-        final fotoRows = await _db
-            .from('inspection_responses')
-            .select('inspection_id, photo_url')
-            .inFilter('inspection_id', recentIds)
-            .not('photo_url', 'is', null);
         for (final f in fotoRows) {
           final id = f['inspection_id'] as String;
           final atual = metricas[id];
           metricas[id] = _ReportMetrics(
             complianceRate: atual?.complianceRate,
             nonCompliant: atual?.nonCompliant ?? 0,
+            compliant: atual?.compliant ?? 0,
             temFoto: true,
           );
+        }
+      }
+
+      // ── Série de cada relatório (A3) ──────────────────────────────────
+      // A série vive em tasks; inspections guarda só o task_id. Uma consulta
+      // extra, filtrada pelo hospital como todas as outras.
+      final taskIds = recentList
+          .map((e) => e['task_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
+      final seriesPorTask = <String, Map<String, dynamic>>{};
+      if (taskIds.isNotEmpty) {
+        final rows = await _db
+            .from('tasks')
+            .select('id, series_id, series_total, series_index')
+            .eq('hospital_id', hospitalId)
+            .inFilter('id', taskIds);
+        for (final t in rows) {
+          seriesPorTask[t['id'] as String] = t;
         }
       }
 
@@ -286,6 +360,7 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
           _recentes = recentList.map((e) {
             final id = e['id'] as String;
             final m = metricas[id];
+            final serie = seriesPorTask[e['task_id'] as String?];
             return _RecentInspection(
               id: id,
               status: e['overall_status'] as String,
@@ -298,6 +373,10 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
               nonCompliant: m?.nonCompliant ?? 0,
               temFoto: m?.temFoto ?? false,
               arquivado: e['archived_at'] != null,
+              compliant: m?.compliant ?? 0,
+              seriesId: serie?['series_id'] as String?,
+              seriesTotal: (serie?['series_total'] as num?)?.toInt(),
+              seriesIndex: (serie?['series_index'] as num?)?.toInt(),
             );
           }).toList();
           _setoresDisponiveis = sectorMap.values.toList()
@@ -407,8 +486,11 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
         const SizedBox(height: 10),
         TextField(
           controller: _buscaCtrl,
+          // Teto de tamanho no texto livre da busca (B6 da auditoria).
+          maxLength: 80,
           onChanged: (v) => setState(() => _busca = v),
           decoration: InputDecoration(
+            counterText: '',
             hintText: 'Buscar por setor ou checklist',
             prefixIcon: const Icon(Icons.search, size: 20),
             isDense: true,
@@ -464,6 +546,209 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Escolhe o card conforme o grupo: série vira UM card expansível,
+  /// relatório avulso continua exatamente como antes (A3).
+  Widget _buildGroupCard(_ReportGroup g) {
+    if (!g.isSerie) return _buildReportCard(g.principal);
+    return _buildSerieCard(g);
+  }
+
+  /// Card de uma série: um só, com o resumo agregado e as ocorrências
+  /// dentro. Mesmo tratamento que o quadro de tarefas ja dava.
+  Widget _buildSerieCard(_ReportGroup g) {
+    final r = g.principal;
+    final taxa = g.taxa;
+    final corTaxa = taxa == null
+        ? AppColors.textDisabled
+        : taxa >= 80
+            ? AppColors.compliant
+            : taxa >= 60
+                ? AppColors.pending
+                : AppColors.nonCompliant;
+    final ncs = g.totalNaoConformidades;
+
+    return Card(
+      child: Theme(
+        // Remove só as linhas divisórias do ExpansionTile; nenhuma cor do
+        // app é alterada.
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: const Icon(
+            Icons.repeat_rounded,
+            size: 20,
+            color: AppColors.primary,
+          ),
+          title: Text(
+            r.sectorName,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 2),
+              Text(
+                r.checklistTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(Icons.donut_small_outlined, size: 15, color: corTaxa),
+                  const SizedBox(width: 4),
+                  Text(
+                    taxa != null ? '${taxa.toStringAsFixed(1)}%' : '—',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: corTaxa, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(width: 14),
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 15,
+                    color: ncs > 0
+                        ? AppColors.nonCompliant
+                        : AppColors.textDisabled,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$ncs NC',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: ncs > 0
+                              ? AppColors.nonCompliant
+                              : AppColors.textSecondary,
+                          fontWeight:
+                              ncs > 0 ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.primary50,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  g.progresso,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.primary700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Série',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: AppColors.textDisabled),
+              ),
+            ],
+          ),
+          children: [
+            for (final ocorrencia in g.relatorios)
+              _buildOcorrenciaTile(ocorrencia),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Uma ocorrência dentro do card da série: linha enxuta, com a mesma
+  /// navegação e a mesma ação de arquivar do card avulso.
+  Widget _buildOcorrenciaTile(_RecentInspection r) {
+    final rate = r.complianceRate;
+    final rateColor = rate == null
+        ? AppColors.textDisabled
+        : rate >= 80
+            ? AppColors.compliant
+            : rate >= 60
+                ? AppColors.pending
+                : AppColors.nonCompliant;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => context.push(AppRoutes.relatorioIndividual(r.id)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    r.submittedAt != null
+                        ? AppDateUtils.formatDate(r.submittedAt!)
+                        : 'Sem data de envio',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Text(
+                        rate != null ? '${rate.toStringAsFixed(1)}%' : '—',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: rateColor, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        '${r.nonCompliant} NC',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: r.nonCompliant > 0
+                                  ? AppColors.nonCompliant
+                                  : AppColors.textSecondary,
+                            ),
+                      ),
+                      if (r.temFoto) ...[
+                        const SizedBox(width: 10),
+                        const Icon(
+                          Icons.photo_camera_outlined,
+                          size: 13,
+                          color: AppColors.primary,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            StatusBadge(status: r.status, compact: true),
+            IconButton(
+              icon: Icon(
+                r.arquivado
+                    ? Icons.unarchive_outlined
+                    : Icons.inventory_2_outlined,
+                size: 18,
+                color: AppColors.textSecondary,
+              ),
+              tooltip: r.arquivado
+                  ? 'Desarquivar — volta aos indicadores'
+                  : 'Arquivar — sai dos indicadores',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _toggleArquivar(r),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -743,7 +1028,7 @@ class _RelatoriosAnalisesScreenState extends State<RelatoriosAnalisesScreen> {
                                 ],
                               ),
                             ),
-                            ...grupo.value.map(_buildReportCard),
+                            ...grupo.value.map(_buildGroupCard),
                           ]),
                   ],
                 ],
@@ -765,6 +1050,19 @@ class _RecentInspection {
   final bool temFoto;
   final bool arquivado;
 
+  /// Série da tarefa que gerou este relatório. null = tarefa avulsa.
+  /// Vem de tasks.series_id, via inspections.task_id (A3).
+  final String? seriesId;
+
+  /// Tamanho declarado da série, para o selo "3 de 14".
+  final int? seriesTotal;
+
+  /// Posição da ocorrência dentro da série.
+  final int? seriesIndex;
+
+  /// Itens conformes deste relatório — usado só para agregar a série.
+  final int compliant;
+
   _RecentInspection({
     required this.id,
     required this.status,
@@ -776,7 +1074,61 @@ class _RecentInspection {
     this.nonCompliant = 0,
     this.temFoto = false,
     this.arquivado = false,
+    this.seriesId,
+    this.seriesTotal,
+    this.seriesIndex,
+    this.compliant = 0,
   });
+}
+
+/// Um card da lista de relatórios: uma série inteira, ou um relatório avulso.
+///
+/// As ocorrências de uma série apareciam soltas aqui e no quadro de tarefas
+/// já vinham agrupadas — a mesma recorrência tinha duas caras no app (A3).
+/// O agrupamento acontece ANTES do agrupamento por data, porque as
+/// ocorrências caem em dias diferentes e é a série que dá a unidade.
+class _ReportGroup {
+  final String? seriesId;
+
+  /// Relatórios da série, do mais recente para o mais antigo.
+  final List<_RecentInspection> relatorios;
+
+  const _ReportGroup({required this.seriesId, required this.relatorios});
+
+  bool get isSerie => seriesId != null && relatorios.length > 1;
+
+  _RecentInspection get principal => relatorios.first;
+
+  /// Data que posiciona o grupo na linha do tempo: a do relatório mais
+  /// recente da série.
+  DateTime? get dataReferencia => principal.submittedAt;
+
+  int get totalDaSerie {
+    final declarado = principal.seriesTotal;
+    if (declarado != null && declarado >= relatorios.length) return declarado;
+    return relatorios.length;
+  }
+
+  /// "3 de 14" — quantos relatórios desta série já existem.
+  String get progresso => '${relatorios.length} de $totalDaSerie';
+
+  int get totalNaoConformidades =>
+      relatorios.fold(0, (acc, r) => acc + r.nonCompliant);
+
+  /// Taxa da série pela MESMA regra do resto do app: ComplianceUtils,
+  /// agregação por ITEM. Média das taxas daria peso igual a um relatório de
+  /// 2 itens e a um de 50 — é o erro que o projeto já corrigiu (C3).
+  double? get taxa {
+    final avaliados = relatorios.fold<int>(
+      0,
+      (a, r) => a + r.compliant + r.nonCompliant,
+    );
+    if (avaliados == 0) return null;
+    return ComplianceUtils.taxa(
+      compliant: relatorios.fold<int>(0, (a, r) => a + r.compliant),
+      nonCompliant: totalNaoConformidades,
+    );
+  }
 }
 
 /// Métricas de um relatório, exibidas no card da lista (bloco 3).
@@ -785,9 +1137,16 @@ class _ReportMetrics {
   final int nonCompliant;
   final bool temFoto;
 
+  /// Itens conformes, guardados para permitir a agregação por ITEM quando
+  /// vários relatórios de uma série viram um card só (A3/C3). Sem eles, a
+  /// taxa da série seria média de médias — a fórmula que o projeto já
+  /// eliminou por divergir do donut.
+  final int compliant;
+
   const _ReportMetrics({
     this.complianceRate,
     this.nonCompliant = 0,
     this.temFoto = false,
+    this.compliant = 0,
   });
 }
