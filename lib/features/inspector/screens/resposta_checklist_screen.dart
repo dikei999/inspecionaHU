@@ -18,6 +18,7 @@ import '../../../core/models/inspection.dart';
 import '../../../core/models/task.dart';
 import '../../../core/services/audit_service.dart';
 import '../../../core/utils/app_date_utils.dart';
+import '../../../core/utils/compliance_utils.dart';
 import '../../../widgets/nr32_clause_chip.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../widgets/confirm_dialog.dart';
@@ -27,7 +28,13 @@ import '../../../core/services/offline_store.dart';
 import '../../../core/services/offline_sync_service.dart';
 
 /// Estado de persistência de uma resposta individual.
-enum SaveState { idle, saving, saved, error }
+/// Situação do salvamento de um item.
+///
+/// `savedLocal` é salvo DE VERDADE — gravado na fila em disco, sobrevive a
+/// fechar o app — apenas ainda não enviado ao servidor por falta de rede.
+/// Distingui-lo de `error` é o que impede o app de chamar de "não salva" uma
+/// resposta que está guardada (A1).
+enum SaveState { idle, saving, saved, savedLocal, error }
 
 /// Estado local de uma resposta de item ainda não submetida.
 class _ItemState {
@@ -93,8 +100,11 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
   // ── Conectividade ──────────────────────────────────────────────────────────
   bool _isOnline = true;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
-  // respostas pendentes de sync quando offline/falha
-  final List<Map<String, dynamic>> _pendingSync = [];
+
+  /// Quantas respostas DESTA inspeção estão gravadas na fila em disco
+  /// aguardando rede. É informação, não pendência: gravar na fila JÁ é
+  /// salvar. Serve para o rodapé dizer quantas serão enviadas depois.
+  int _naFilaLocal = 0;
 
   @override
   void initState() {
@@ -187,6 +197,10 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
         await _createInspection();
       }
 
+      // Se sobrou algo na fila desta inspeção (envio que falhou antes), ele
+      // é mais recente que o servidor e prevalece.
+      await _aplicarRespostasDaFila();
+
       // 5. Marcar task como in_progress se estava pending
       if (_task!.status == 'pending') {
         await _db
@@ -213,7 +227,8 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       if (abriu) return;
       if (mounted) {
         setState(() {
-          _initError = 'Erro ao carregar inspeção: $e';
+          _initError = 'Não foi possível abrir o checklist. '
+              'Verifique a conexão e tente novamente.';
           _loadingInit = false;
         });
       }
@@ -262,6 +277,11 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
           photoSizeKb: m['photo_size_kb'] as int?,
         )..saveState = SaveState.saved;
       }
+      // A fila local SOBREPÕE o pacote: é o que foi respondido em campo,
+      // depois do download. Sem isto o checklist reabria em branco e parecia
+      // ter perdido a resposta (A1).
+      await _aplicarRespostasDaFila();
+
       for (final item in _items) {
         _responses.putIfAbsent(item.id, () => _ItemState());
       }
@@ -321,6 +341,50 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     }
   }
 
+  /// Aplica sobre `_responses` o que está na fila em disco desta inspeção.
+  ///
+  /// Vale para os dois caminhos de abertura: offline (sobre o pacote
+  /// baixado) e online (sobre o que veio do servidor, caso um envio anterior
+  /// tenha falhado). A fila é sempre a versão mais recente — last-write-wins,
+  /// como o projeto define.
+  Future<void> _aplicarRespostasDaFila() async {
+    if (_inspection == null) return;
+    final fila = await OfflineStore.queuedResponses(_inspection!.id);
+    if (fila.isEmpty) {
+      _naFilaLocal = 0;
+      return;
+    }
+
+    for (final op in fila) {
+      final itemId = op['checklist_item_id'] as String?;
+      if (itemId == null) continue;
+      final payload = Map<String, dynamic>.from(
+        (op['payload'] as Map?) ?? const {},
+      );
+      final estado = _ItemState(
+        status: payload['status'] as String?,
+        observation: (payload['observation'] as String?) ?? '',
+        photoUrl: payload['photo_url'] as String?,
+        photoCapturedAt: payload['photo_captured_at'] != null
+            ? DateTime.tryParse(payload['photo_captured_at'] as String)
+            : null,
+        photoSizeKb: payload['photo_size_kb'] as int?,
+      )..saveState = SaveState.savedLocal;
+
+      // Foto que ainda não subiu: mostra o arquivo local, senão o item
+      // reabriria sem a evidência que o Inspetor tirou.
+      final localPath = op['photo_local_path'] as String?;
+      if (localPath != null) {
+        estado.photoLocalPath = localPath;
+        estado.pendingPhotoPath = localPath;
+        estado.pendingPhotoStoragePath = op['photo_storage_path'] as String?;
+      }
+
+      _responses[itemId] = estado;
+    }
+    _naFilaLocal = fila.length;
+  }
+
   // ── Conectividade ──────────────────────────────────────────────────────────
 
   void _watchConnectivity() {
@@ -331,13 +395,11 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       setState(() => _isOnline = online);
 
       if (online && wasOffline) {
-        // Fila em memoria desta tela (respostas simples).
-        if (_pendingSync.isNotEmpty) _syncPending();
-        // Fila em disco (respostas e fotos que aguardavam rede) — 6.4.
-        OfflineSyncService.syncPending().then((r) {
-          if (!mounted || !r.temAlgo) return;
-          setState(() {});
-        });
+        // Uma fila só: a de disco. Ela cobre respostas E fotos, é
+        // idempotente por (inspeção, item) e sobrevive a fechar o app.
+        // A antiga fila em memória desta tela foi removida — as duas
+        // drenavam a mesma inspeção sem se conhecer.
+        _sincronizarFilaLocal();
       }
     });
 
@@ -349,35 +411,35 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     });
   }
 
-  Future<void> _syncPending() async {
-    final toSync = List<Map<String, dynamic>>.from(_pendingSync);
-    _pendingSync.clear();
+  /// Drena a fila em disco e reflete o resultado nos itens desta tela.
+  Future<void> _sincronizarFilaLocal() async {
+    final r = await OfflineSyncService.syncPending();
+    if (!mounted) return;
 
-    var anySynced = false;
-    for (final payload in toSync) {
-      try {
-        await _db
-            .from('inspection_responses')
-            .upsert(payload, onConflict: 'inspection_id,checklist_item_id');
-        anySynced = true;
-        final state = _responses[payload['checklist_item_id']];
-        if (state != null) state.saveState = SaveState.saved;
-      } catch (_) {
-        _pendingSync.add(payload); // re-enfileira se ainda falhar
-      }
-    }
+    await _atualizarContagemLocal();
+    if (!mounted) return;
 
-    if (mounted) {
-      setState(() {});
-      if (anySynced) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Dados sincronizados com sucesso.'),
-            backgroundColor: AppColors.compliant,
-          ),
-        );
+    if (r.enviadas == 0) return;
+
+    // Não presume: relê a fila e marca como enviado só o item que REALMENTE
+    // saiu dela. O que falhou continua sinalizado.
+    final aindaNaFila = (await OfflineStore.queuedResponses(_inspection!.id))
+        .map((op) => op['checklist_item_id'] as String)
+        .toSet();
+    if (!mounted) return;
+
+    setState(() {
+      for (final entry in _responses.entries) {
+        final st = entry.value;
+        if (st.saveState != SaveState.savedLocal &&
+            st.saveState != SaveState.error) {
+          continue;
+        }
+        st.saveState =
+            aindaNaFila.contains(entry.key) ? st.saveState : SaveState.saved;
       }
-    }
+    });
+    showActionFeedback(context, 'Respostas enviadas ao servidor.');
   }
 
   // ── Auto-save resiliente (retry com backoff exponencial) ──────────────────
@@ -412,13 +474,11 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     };
 
     if (!_isOnline) {
-      // Sem rede: grava a resposta no aparelho (6.3). A fila em memória
-      // morria junto com a tela; agora a operação vai para disco e é
-      // enviada pelo OfflineSyncService quando a conexão voltar.
-      _pendingSync.removeWhere(
-        (p) => p['checklist_item_id'] == itemId,
-      ); // mantém só o mais recente
-      _pendingSync.add(payload);
+      // Sem rede: gravar na fila em disco É salvar (A1). O arquivo tem id
+      // determinístico por (inspeção, item), sobrevive a fechar o app e é
+      // enviado pelo OfflineSyncService quando a conexão voltar. Não existe
+      // aqui uma segunda fila em memória: ela duplicava a de disco e, ao
+      // sincronizar, drenava uma sem baixar a outra.
       await OfflineSyncService.enqueueResponse(
         inspectionId: _inspection!.id,
         checklistItemId: itemId,
@@ -426,9 +486,8 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
         photoLocalPath: state.pendingPhotoPath,
         photoStoragePath: state.pendingPhotoStoragePath,
       );
-      // Enfileirado com sucesso é "salvo no aparelho", não erro: o que
-      // falta é só a rede, e a faixa global já diz isso.
-      if (mounted) setState(() => state.saveState = SaveState.saved);
+      await _atualizarContagemLocal();
+      if (mounted) setState(() => state.saveState = SaveState.savedLocal);
       return;
     }
 
@@ -453,10 +512,10 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       }
     }
 
-    // Todas as tentativas falharam: enfileira em disco e sinaliza erro no
-    // item. A resposta não se perde nem se o app for fechado agora.
-    _pendingSync.removeWhere((p) => p['checklist_item_id'] == itemId);
-    _pendingSync.add(payload);
+    // Todas as tentativas falharam com rede disponível: enfileira em disco
+    // do mesmo jeito, então a resposta não se perde nem fechando o app. O
+    // item fica marcado como erro porque, COM rede, falhar é anormal e o
+    // Inspetor deve poder tentar de novo na hora.
     await OfflineSyncService.enqueueResponse(
       inspectionId: _inspection!.id,
       checklistItemId: itemId,
@@ -464,39 +523,55 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
       photoLocalPath: state.pendingPhotoPath,
       photoStoragePath: state.pendingPhotoStoragePath,
     );
+    await _atualizarContagemLocal();
     if (mounted) setState(() => state.saveState = SaveState.error);
   }
 
   /// Repete manualmente o salvamento de um item com erro.
-  void _retrySave(String itemId) {
-    _pendingSync.removeWhere((p) => p['checklist_item_id'] == itemId);
-    _saveResponse(itemId);
+  void _retrySave(String itemId) => _saveResponse(itemId);
+
+  /// Recontagem do que está na fila em disco para ESTA inspeção.
+  Future<void> _atualizarContagemLocal() async {
+    if (_inspection == null) return;
+    final n = await OfflineStore.queueLengthForInspection(_inspection!.id);
+    if (mounted) setState(() => _naFilaLocal = n);
   }
 
   // ── Saida com pendencia (bloco 4) ─────────────────────────────────────────
 
-  /// Ha resposta ainda nao confirmada pelo servidor? Cobre os tres casos:
-  /// salvamento em voo, item que falhou e fila offline.
-  bool get _temPendencia =>
-      _savingCount > 0 || _errorCount > 0 || _pendingSync.isNotEmpty;
+  /// Há risco REAL de perder resposta ao sair agora?
+  ///
+  /// Só há risco enquanto um salvamento está em voo (`saving`), porque essa
+  /// gravação ainda não chegou nem ao servidor nem ao disco. O que já está
+  /// na fila local — offline ou depois de falha — está guardado no aparelho
+  /// e é enviado depois, então NÃO é perda e não gera alarme (A1).
+  bool get _temRiscoDePerda => _savingCount > 0;
 
-  /// Confirma a saida quando ha resposta nao salva. Retorna true para sair.
+  /// Confirma a saída apenas quando existe alteração de fato não gravada.
+  /// Retorna true para sair.
   Future<bool> _confirmarSaida() async {
-    if (!_temPendencia) return true;
+    if (!_temRiscoDePerda) return true;
 
-    final pendentes = _savingCount + _errorCount + _pendingSync.length;
     return confirmAction(
       context,
-      title: 'Sair com respostas não salvas?',
-      message: _isOnline
-          ? '$pendentes resposta(s) ainda não foram confirmadas pelo '
-                'servidor. Sair agora pode causar a perda dessas respostas.'
-          : '$pendentes resposta(s) estão na fila aguardando conexão. '
-                'Elas permanecem salvas neste aparelho e serão enviadas '
-                'quando a conexão for restabelecida.',
-      confirmLabel: 'Sair',
-      cancelLabel: 'Permanecer',
+      title: 'Aguardar o salvamento?',
+      message: '$_savingCount resposta(s) estão sendo gravadas neste '
+          'momento. Saindo agora, elas podem não ser registradas.',
+      confirmLabel: 'Sair mesmo assim',
+      cancelLabel: 'Aguardar',
       icon: Icons.warning_amber_rounded,
+      destructive: true,
+    );
+  }
+
+  /// Mensagem de saída tranquila: confirma que ficou guardado no aparelho.
+  void _avisarGuardadoLocalmente() {
+    if (_naFilaLocal == 0) return;
+    final plural = _naFilaLocal == 1 ? 'resposta salva' : 'respostas salvas';
+    showActionFeedback(
+      context,
+      '$_naFilaLocal $plural neste aparelho. Serão enviadas quando houver '
+      'conexão.',
     );
   }
 
@@ -761,7 +836,15 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
         if (s == 'NA') notApplicable++;
       }
       final total = _items.length;
-      final rate = total > 0 ? (compliant / total * 100) : 0.0;
+      // Fonte UNICA de calculo: ComplianceUtils. Antes esta linha dividia
+      // por _items.length, ou seja, contava os NA no denominador — um
+      // relatorio com 5 C, 0 NC e 5 NA era gravado como 50%%, enquanto o
+      // donut do painel mostrava 100%% para o mesmo dado (C3). Item que
+      // nao se aplica nao e conformidade nem falha.
+      final rate = ComplianceUtils.taxa(
+        compliant: compliant,
+        nonCompliant: nonCompliant,
+      );
 
       // UPDATE inspection
       await _db
@@ -822,7 +905,8 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
         setState(() => _submitting = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erro ao enviar inspeção: $e'),
+            content: const Text('Não foi possível enviar a inspeção. '
+                'Suas respostas continuam salvas.'),
             backgroundColor: AppColors.nonCompliant,
           ),
         );
@@ -899,7 +983,7 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
     // (bloco 4). PopScope cobre o gesto de voltar do sistema; o botao
     // "Salvar e sair" passa pela mesma checagem.
     return PopScope(
-      canPop: !_temPendencia,
+      canPop: !_temRiscoDePerda,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
         if (await _confirmarSaida() && mounted) {
@@ -913,6 +997,9 @@ class _RespostaChecklistScreenState extends State<RespostaChecklistScreen> {
             TextButton(
               onPressed: () async {
                 if (await _confirmarSaida() && context.mounted) {
+                  // Offline, sair é normal: avisa que ficou guardado em vez
+                  // de alarmar (A1).
+                  _avisarGuardadoLocalmente();
                   Navigator.of(context).pop();
                 }
               },
@@ -1547,8 +1634,14 @@ class _ChecklistItemCardState extends State<_ChecklistItemCard> {
                 TextField(
                   controller: _obsCtrl,
                   maxLines: 3,
+                  // Teto de tamanho: era o único texto livre do app sem
+                  // limite, e é o mais usado (uma observação por NC, com
+                  // salvamento automático). 1000 caracteres cobrem com folga
+                  // a descrição de uma não conformidade (B6 da auditoria).
+                  maxLength: 1000,
                   onChanged: widget.onObservationChanged,
                   decoration: InputDecoration(
+                    counterText: '',
                     labelText: isNC
                         ? 'Observação (obrigatória)'
                         : 'Observação (opcional)',
@@ -1616,6 +1709,17 @@ class _SaveIndicator extends StatelessWidget {
           Icons.cloud_done_outlined,
           size: 16,
           color: AppColors.compliant,
+        );
+      case SaveState.savedLocal:
+        // Salvo no aparelho, aguardando rede. Ícone de "guardado", não de
+        // problema: offline isto é o estado normal e correto (A1).
+        return const Tooltip(
+          message: 'Salva neste aparelho — será enviada quando houver conexão',
+          child: Icon(
+            Icons.save_outlined,
+            size: 16,
+            color: AppColors.pending,
+          ),
         );
       case SaveState.error:
         return GestureDetector(

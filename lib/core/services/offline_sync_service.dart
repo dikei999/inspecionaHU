@@ -52,6 +52,12 @@ class OfflineSyncService {
   /// Última rodada concluída — a faixa usa para dar o retorno do envio.
   static final ValueNotifier<SyncResult?> lastResult = ValueNotifier(null);
 
+  /// true SÓ enquanto uma rodada de envio está de fato em curso.
+  ///
+  /// A faixa antes dizia "Enviando" sempre que havia fila com rede, mesmo
+  /// parada. Ter fila e estar enviando são coisas diferentes (A1).
+  static final ValueNotifier<bool> syncing = ValueNotifier(false);
+
   static Stream<List<ConnectivityResult>> get connectivityStream =>
       _connectivity.onConnectivityChanged;
 
@@ -72,6 +78,10 @@ class OfflineSyncService {
     online.value = await isOnline;
     pendingCount.value = await OfflineStore.queueLength();
 
+    // Fila que sobrou de uma sessão anterior sai agora, sem esperar uma
+    // transição de conectividade que pode nunca acontecer.
+    unawaited(syncIfNeeded());
+
     _sub ??= connectivityStream.listen((results) async {
       final agora = results.any((r) => r != ConnectivityResult.none);
       final antes = online.value;
@@ -87,10 +97,23 @@ class OfflineSyncService {
     _sub = null;
     lastResult.value = null;
     pendingCount.value = 0;
+    syncing.value = false;
   }
 
   static Future<void> refreshPendingCount() async {
     pendingCount.value = await OfflineStore.queueLength();
+  }
+
+  /// Tenta drenar a fila se houver rede e nada em curso.
+  ///
+  /// Antes o envio só era disparado na TRANSIÇÃO offline→online. Se o app
+  /// abrisse já com rede e fila (fechado offline e reaberto em casa), nada
+  /// disparava e a faixa ficava parada. Chamado no start e pela faixa.
+  static Future<void> syncIfNeeded() async {
+    if (_syncing) return;
+    if (pendingCount.value == 0) return;
+    if (!await isOnline) return;
+    await syncPending();
   }
 
   // ── Enfileiramento ────────────────────────────────────────────────────────
@@ -131,6 +154,7 @@ class OfflineSyncService {
   static Future<SyncResult> syncPending() async {
     if (_syncing) return const SyncResult();
     _syncing = true;
+    syncing.value = true;
 
     var enviadas = 0;
     var falharam = 0;
@@ -182,6 +206,7 @@ class OfflineSyncService {
       }
     } finally {
       _syncing = false;
+      syncing.value = false;
       await refreshPendingCount();
     }
 

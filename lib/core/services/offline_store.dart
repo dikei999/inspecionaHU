@@ -259,6 +259,26 @@ class OfflineStore {
 
   static Future<int> queueLength() async => (await loadQueue()).length;
 
+  /// Respostas da fila que pertencem a UMA inspeção, na ordem de gravação.
+  ///
+  /// Necessário para reabrir um checklist respondido offline: o pacote
+  /// baixado só tem o que veio do servidor, e o que foi respondido em campo
+  /// vive aqui até a rede voltar. Sem esta leitura a tela reabria em branco
+  /// e dava a impressão de que a resposta se perdeu.
+  static Future<List<Map<String, dynamic>>> queuedResponses(
+    String inspectionId,
+  ) async {
+    final fila = await loadQueue();
+    return fila
+        .where((op) =>
+            op['type'] == 'response' && op['inspection_id'] == inspectionId)
+        .toList();
+  }
+
+  /// Quantas operações na fila pertencem a esta inspeção.
+  static Future<int> queueLengthForInspection(String inspectionId) async =>
+      (await queuedResponses(inspectionId)).length;
+
   // ── Fotos aguardando upload ─────────────────────────────────────────────
   // Foto NUNCA é descartada por falta de rede (6.3): sai do diretório
   // temporário do sistema e vai para a pasta do app, que não é limpa

@@ -27,10 +27,21 @@ class ConnectionBanner extends StatelessWidget {
               return ValueListenableBuilder<int>(
                 valueListenable: OfflineSyncService.pendingCount,
                 builder: (context, pendentes, _) {
-                  return ValueListenableBuilder<SyncResult?>(
-                    valueListenable: OfflineSyncService.lastResult,
-                    builder: (context, resultado, _) {
-                      return _faixa(context, online, pendentes, resultado);
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: OfflineSyncService.syncing,
+                    builder: (context, enviando, _) {
+                      return ValueListenableBuilder<SyncResult?>(
+                        valueListenable: OfflineSyncService.lastResult,
+                        builder: (context, resultado, _) {
+                          return _faixa(
+                            context,
+                            online,
+                            pendentes,
+                            enviando,
+                            resultado,
+                          );
+                        },
+                      );
                     },
                   );
                 },
@@ -47,6 +58,7 @@ class ConnectionBanner extends StatelessWidget {
     BuildContext context,
     bool online,
     int pendentes,
+    bool enviando,
     SyncResult? resultado,
   ) {
     // Offline: o que mais importa saber.
@@ -61,13 +73,24 @@ class ConnectionBanner extends StatelessWidget {
       );
     }
 
-    // Online com fila: está enviando ou falta enviar.
-    if (pendentes > 0) {
+    // Online e com envio REALMENTE em curso. Ter fila parada não é enviar:
+    // dizer "Enviando" com a fila estacionada é informação falsa (A1).
+    if (enviando && pendentes > 0) {
       return _Faixa(
         cor: AppColors.primary50,
         corTexto: AppColors.primary,
         icone: Icons.sync,
-        texto: 'Enviando · $pendentes ${_plural(pendentes)} na fila',
+        texto: 'Enviando · $pendentes ${_plural(pendentes)}',
+      );
+    }
+
+    // Online, com fila, sem envio em curso: só informa que falta enviar.
+    if (pendentes > 0) {
+      return _Faixa(
+        cor: AppColors.pending100,
+        corTexto: AppColors.pending,
+        icone: Icons.cloud_upload_outlined,
+        texto: '$pendentes ${_plural(pendentes)} aguardando envio',
       );
     }
 
