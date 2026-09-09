@@ -202,7 +202,10 @@ class _PerfilScreenState extends State<PerfilScreen> {
       _confirmSenhaCtrl.clear();
       _snack('Senha alterada com sucesso.');
     } on PostgrestException catch (e) {
-      if (mounted) _snack('Erro: ${e.message}', error: true);
+      debugPrint('[Perfil] erro: ${e.message}');
+      if (mounted) {
+        _snack('Não foi possível salvar. Tente novamente.', error: true);
+      }
     } catch (_) {
       if (mounted) _snack('Erro ao alterar senha.', error: true);
     } finally {

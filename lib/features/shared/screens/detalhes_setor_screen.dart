@@ -139,10 +139,12 @@ class _DetalhesSetorScreenState extends State<DetalhesSetorScreen>
         });
       }
     } on PostgrestException catch (e) {
+      debugPrint('[DetalhesSetor] carregar: ${e.message}');
       if (mounted) {
         setState(() {
           _loading = false;
-          _accessError = 'Erro ao carregar o setor: ${e.message}';
+          _accessError = 'Não foi possível carregar o setor. '
+              'Verifique a conexão e tente novamente.';
         });
       }
     } catch (_) {
@@ -239,7 +241,9 @@ class _DetalhesSetorScreenState extends State<DetalhesSetorScreen>
           'Setor ${newStatus == 'active' ? 'reativado' : 'desativado'}.');
       _load();
     } on PostgrestException catch (e) {
-      _showSnack('Erro ao alterar status: ${e.message}', error: true);
+      debugPrint('[DetalhesSetor] alterar status: ${e.message}');
+      _showSnack('Não foi possível alterar a situação. Tente novamente.',
+          error: true);
     } catch (_) {
       _showSnack('Erro ao alterar status.', error: true);
     }
@@ -649,7 +653,9 @@ class _ChecklistsTabState extends State<_ChecklistsTab> {
       _showSnack('Checklist desativado.');
       _load();
     } on PostgrestException catch (e) {
-      _showSnack('Erro ao desativar: ${e.message}', error: true);
+      debugPrint('[DetalhesSetor] desativar: ${e.message}');
+      _showSnack('Não foi possível desativar. Tente novamente.',
+          error: true);
     } catch (_) {
       _showSnack('Erro ao desativar checklist.', error: true);
     }
@@ -1619,7 +1625,9 @@ class _EquipeTabState extends State<_EquipeTab> {
           : 'Supervisor responsável atualizado.');
       await widget.onOwnerChanged();
     } on PostgrestException catch (e) {
-      _showSnack('Erro ao salvar: ${e.message}', error: true);
+      debugPrint('[DetalhesSetor] salvar: ${e.message}');
+      _showSnack('Não foi possível salvar. Tente novamente.',
+          error: true);
     } catch (_) {
       _showSnack('Erro ao definir o responsável.', error: true);
     }
@@ -1746,7 +1754,9 @@ class _EquipeTabState extends State<_EquipeTab> {
       _showSnack('Equipe do setor atualizada.');
       _load();
     } on PostgrestException catch (e) {
-      _showSnack('Erro ao salvar: ${e.message}', error: true);
+      debugPrint('[DetalhesSetor] salvar: ${e.message}');
+      _showSnack('Não foi possível salvar. Tente novamente.',
+          error: true);
     } catch (_) {
       _showSnack('Erro ao salvar vínculos.', error: true);
     }

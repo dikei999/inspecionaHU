@@ -223,7 +223,9 @@ class _HospitaisScreenState extends State<HospitaisScreen> {
       _showSnack('Hospital apagado.');
       _load();
     } on PostgrestException catch (e) {
-      _showSnack('Erro ao apagar: ${e.message}', error: true);
+      debugPrint('[Hospitais] apagar: ${e.message}');
+      _showSnack('Não foi possível apagar o hospital. Tente novamente.',
+          error: true);
     } catch (_) {
       _showSnack('Erro ao apagar hospital.', error: true);
     }

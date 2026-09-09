@@ -173,7 +173,8 @@ class _FormSetorScreenState extends State<FormSetorScreen> {
       debugPrint('[FormSetor] PostgrestException: ${e.message} | code: ${e.code} | details: ${e.details} | hint: ${e.hint}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erro ao salvar setor: ${e.message}'),
+          content: const Text(
+              'Não foi possível salvar o setor. Tente novamente.'),
           backgroundColor: AppColors.nonCompliant,
           duration: const Duration(seconds: 6),
         ));
@@ -182,7 +183,8 @@ class _FormSetorScreenState extends State<FormSetorScreen> {
       debugPrint('[FormSetor] erro inesperado: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erro inesperado: $e'),
+          content: const Text(
+              'Não foi possível salvar o setor. Tente novamente.'),
           backgroundColor: AppColors.nonCompliant,
           duration: const Duration(seconds: 6),
         ));

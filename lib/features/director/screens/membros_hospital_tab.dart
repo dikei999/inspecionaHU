@@ -153,7 +153,9 @@ class _MembrosHospitalTabState extends State<MembrosHospitalTab> {
       _load();
     } on PostgrestException catch (e) {
       debugPrint('[GestaoEquipe] _desativar PostgrestException: ${e.message} | ${e.code}');
-      _showSnack('Erro ao salvar: ${e.message}', error: true);
+      debugPrint('[MembrosHospital] salvar: ${e.message}');
+      _showSnack('Não foi possível salvar. Tente novamente.',
+          error: true);
     } catch (e) {
       debugPrint('[GestaoEquipe] _desativar erro inesperado: $e');
       _showSnack('Erro inesperado ao salvar.', error: true);
@@ -335,7 +337,7 @@ class _UserCard extends StatelessWidget {
         // Vincular a setores saiu daqui: isso e da aba Equipe do setor,
         // que e o unico lugar para gerir as pessoas de um setor.
         trailing: PopupMenuButton<String>(
-          tooltip: 'Acoes do membro',
+          tooltip: 'Ações do membro',
           onSelected: (v) {
             if (v == 'desativar') onDesativar(u);
           },

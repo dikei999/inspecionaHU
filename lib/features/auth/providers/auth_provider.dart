@@ -315,8 +315,10 @@ class AuthProvider extends ChangeNotifier {
           'Desabilite em Authentication → Settings → Email → '
           '"Enable email confirmations".',
         );
-        return 'Confirmação de e-mail está ativa no Supabase. '
-            'Desabilite em Authentication → Settings → Email.';
+        // O ajuste é de configuração do servidor e cabe ao administrador;
+        // ao usuário interessa só o que fazer agora (D2).
+        return 'Sua conta foi criada. Confirme o e-mail que enviamos '
+            'antes de entrar.';
       }
       debugPrint('[signUp] sessão ativa: ${response.session!.accessToken.substring(0, 20)}...');
 
@@ -343,7 +345,8 @@ class AuthProvider extends ChangeNotifier {
           '  details: ${e.details}\n'
           '  hint:    ${e.hint}',
         );
-        return 'Erro ao salvar perfil: ${e.message}';
+        debugPrint('[Auth] salvar perfil: ${e.message}');
+        return 'Não foi possível salvar seu perfil. Tente novamente.';
       } finally {
         _insertingProfile = false;
       }
@@ -362,7 +365,9 @@ class AuthProvider extends ChangeNotifier {
           '  Possível falha silenciosa de RLS ou trigger de banco.\n'
           '  Verifique a policy "profiles_insert_own" no Supabase.',
         );
-        return 'Perfil não encontrado após criação. Verifique as políticas RLS.';
+        debugPrint('[Auth] perfil nao encontrado apos criacao — checar RLS');
+        return 'Sua conta foi criada, mas o perfil não pôde ser carregado. '
+            'Tente entrar novamente.';
       }
 
       debugPrint('[signUp] PROFILE CRIADO COM SUCESSO: $check');
@@ -375,7 +380,8 @@ class AuthProvider extends ChangeNotifier {
       return _translateError(e.message);
     } catch (e) {
       debugPrint('[signUp] ERRO INESPERADO: $e');
-      return 'Erro ao criar conta: $e';
+      debugPrint('[Auth] criar conta: $e');
+      return 'Não foi possível criar a conta. Tente novamente.';
     }
   }
 

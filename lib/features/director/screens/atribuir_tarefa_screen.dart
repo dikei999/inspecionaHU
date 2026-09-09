@@ -282,11 +282,20 @@ class _AtribuirTarefaScreenState extends State<AtribuirTarefaScreen> {
       debugPrint('[AtribuirTarefa] erro: $e');
       if (mounted) {
         // Coluna inexistente = migration de série não executada.
-        final msg = e.toString().contains('series_id')
-            ? 'Recurso indisponível: execute migration_task_series.sql no '
-                'SQL Editor do Supabase.'
-            : 'Erro ao atribuir tarefas.';
-        _showSnack(msg, error: true);
+        // Coluna inexistente indica migration pendente. O usuário não
+        // tem o que fazer com o nome do arquivo .sql — isso vai para o
+        // log; a tela diz o que ele PODE fazer (D2).
+        final semSerie = e.toString().contains('series_id');
+        if (semSerie) {
+          debugPrint('[AtribuirTarefa] migration_task_series.sql pendente');
+        }
+        _showSnack(
+          semSerie
+              ? 'Tarefa recorrente indisponível no momento. Atribua uma '
+                  'tarefa avulsa ou procure o administrador.'
+              : 'Não foi possível atribuir as tarefas. Tente novamente.',
+          error: true,
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
