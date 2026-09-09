@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:inspecionahu/app/theme.dart';
 import 'package:inspecionahu/core/constants/app_colors.dart';
+import 'package:inspecionahu/widgets/app_filter_chip.dart';
 import 'package:inspecionahu/widgets/status_badge.dart';
 
 /// Item 5 — auditoria de CONTRASTE componente por componente.
@@ -35,61 +36,64 @@ void main() {
     return t.element(find.byType(Scaffold));
   }
 
-  group('A. Chips do Material', () {
-    testWidgets('FilterChip não selecionado tem fundo visível', (t) async {
-      final ctx = await montar(
-          t,
-          FilterChip(
-              label: const Text('Seg'), selected: false, onSelected: (_) {}));
-      final fundo = ChipTheme.of(ctx).color!.resolve(<WidgetState>{})!;
-      expect(fundo, isNot(Colors.white));
-      expect(fundo, isNot(AppColors.surface));
-      expect(fundo, AppColors.surfaceSubtle);
-    });
+  group('A. Chip de filtro do app', () {
+    // Este grupo lia o ChipTheme com ChipTheme.of(context) e passava mesmo
+    // com o app mostrando texto branco sobre branco: media a configuração,
+    // não o pixel. Agora mede o AppFilterChip renderizado, que é o único
+    // chip de filtro do app e não usa widget Chip.
+    ({Color fundo, Color texto, BorderSide borda}) pintado(WidgetTester t) {
+      final texto = t.widget<Text>(find.byType(Text));
+      final deco = (t.widget<Ink>(find.byType(Ink)).decoration!) as BoxDecoration;
+      return (
+        fundo: deco.color!,
+        texto: texto.style!.color!,
+        borda: deco.border!.top,
+      );
+    }
 
-    testWidgets('ChoiceChip não selecionado tem fundo visível', (t) async {
-      final ctx = await montar(
-          t,
-          ChoiceChip(
-              label: const Text('Todos'), selected: false, onSelected: (_) {}));
-      final fundo = ChipTheme.of(ctx).color!.resolve(<WidgetState>{})!;
-      expect(fundo, AppColors.surfaceSubtle);
-    });
-
-    testWidgets('borda visível no estado não selecionado', (t) async {
-      final ctx = await montar(
-          t,
-          ChoiceChip(
-              label: const Text('Todos'), selected: false, onSelected: (_) {}));
-      final lado = ChipTheme.of(ctx).side as WidgetStateBorderSide;
-      final borda = lado.resolve(<WidgetState>{})!;
-      expect(borda.width, greaterThan(0));
-      expect(borda.color, isNot(Colors.transparent));
-      expect(contraste(borda.color, AppColors.surface), greaterThan(1.2),
-          reason: 'borda precisa se distinguir do card branco');
-    });
-
-    testWidgets('selecionado: primary com texto branco legível', (t) async {
-      final ctx = await montar(
-          t,
-          ChoiceChip(
-              label: const Text('Todos'), selected: true, onSelected: (_) {}));
-      final ct = ChipTheme.of(ctx);
-      expect(ct.color!.resolve({WidgetState.selected}), AppColors.primary);
-      final estilo = ct.labelStyle as WidgetStateTextStyle;
-      expect(estilo.resolve({WidgetState.selected}).color, Colors.white);
-      expect(contraste(Colors.white, AppColors.primary), greaterThan(4.5));
+    testWidgets('não selecionado tem fundo e borda distintos do card',
+        (t) async {
+      await montar(
+        t,
+        AppFilterChip(label: 'Seg', selected: false, onSelected: (_) {}),
+      );
+      final e = pintado(t);
+      expect(e.borda.width, greaterThan(0));
+      expect(e.borda.color, isNot(Colors.transparent));
+      expect(
+        contraste(e.borda.color, AppColors.surface),
+        greaterThan(1.2),
+        reason: 'borda precisa se distinguir do card branco',
+      );
     });
 
     testWidgets('não selecionado: texto escuro legível', (t) async {
-      final ctx = await montar(
-          t,
-          ChoiceChip(
-              label: const Text('Todos'), selected: false, onSelected: (_) {}));
-      final estilo = ChipTheme.of(ctx).labelStyle as WidgetStateTextStyle;
-      final cor = estilo.resolve(<WidgetState>{}).color!;
-      expect(cor, AppColors.textPrimary);
-      expect(contraste(cor, AppColors.surfaceSubtle), greaterThan(4.5));
+      await montar(
+        t,
+        AppFilterChip(label: 'Todos', selected: false, onSelected: (_) {}),
+      );
+      final e = pintado(t);
+      expect(e.texto, isNot(Colors.white));
+      expect(contraste(e.texto, e.fundo), greaterThan(4.5));
+    });
+
+    testWidgets('selecionado: primary com texto branco legível', (t) async {
+      await montar(
+        t,
+        AppFilterChip(label: 'Todos', selected: true, onSelected: (_) {}),
+      );
+      final e = pintado(t);
+      expect(e.fundo, AppColors.primary);
+      expect(e.texto, Colors.white);
+      expect(contraste(e.texto, e.fundo), greaterThan(4.5));
+    });
+
+    testWidgets('nenhum chip do Material sobrou na árvore', (t) async {
+      await montar(
+        t,
+        AppFilterChip(label: 'Todos', selected: false, onSelected: (_) {}),
+      );
+      expect(find.byType(RawChip), findsNothing);
     });
   });
 

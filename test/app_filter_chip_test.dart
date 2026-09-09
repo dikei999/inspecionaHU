@@ -6,11 +6,17 @@ import 'package:inspecionahu/app/theme.dart';
 import 'package:inspecionahu/core/constants/app_colors.dart';
 import 'package:inspecionahu/widgets/app_filter_chip.dart';
 
-/// Item 2 — contraste verificado no WIDGET renderizado, não no tema.
+/// A2 — contraste do chip medido no que é PINTADO.
 ///
-/// O estilo do AppFilterChip é definido no próprio widget justamente
-/// porque o chipTheme não alcançava todos os componentes. Este teste monta
-/// o widget e lê a cor que o Flutter realmente resolveu.
+/// A versão anterior deste teste lia `chip.color.resolve(...)` e
+/// `chip.labelStyle.resolve(...)` do FilterChip, ou seja, a configuração
+/// entregue ao widget. Ela passava enquanto o app mostrava texto branco
+/// sobre fundo branco, porque o FilterChip refazia o merge do labelStyle
+/// depois — o teste media a intenção, não o resultado.
+///
+/// Agora o AppFilterChip não usa Chip nenhum, e o teste lê o TextStyle
+/// efetivo do Text renderizado e a decoração efetiva do Ink. É o que o olho
+/// vê na tela.
 void main() {
   double lum(Color c) {
     double canal(double v) =>
@@ -23,15 +29,15 @@ void main() {
     return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
   }
 
-  /// Lê o estilo efetivo do FilterChip interno, como o Flutter o resolveu.
-  ({Color fundo, Color texto, BorderSide borda}) estiloDe(
-      WidgetTester t, bool selecionado) {
-    final chip = t.widget<FilterChip>(find.byType(FilterChip));
-    final estados = selecionado ? {WidgetState.selected} : <WidgetState>{};
+  /// Lê o que foi de fato renderizado: cor do texto, fundo e borda.
+  ({Color fundo, Color texto, BorderSide borda}) pintado(WidgetTester t) {
+    final texto = t.widget<Text>(find.byType(Text));
+    final ink = t.widget<Ink>(find.byType(Ink));
+    final deco = ink.decoration! as BoxDecoration;
     return (
-      fundo: chip.color!.resolve(estados)!,
-      texto: (chip.labelStyle as WidgetStateTextStyle).resolve(estados).color!,
-      borda: (chip.side as WidgetStateBorderSide).resolve(estados)!,
+      fundo: deco.color!,
+      texto: texto.style!.color!,
+      borda: deco.border!.top,
     );
   }
 
@@ -48,51 +54,42 @@ void main() {
   }
 
   group('não selecionado não some no branco', () {
-    testWidgets('fundo é cinza claro, distinto do card', (t) async {
+    testWidgets('texto NÃO é branco — a regressão histórica', (t) async {
       await montar(
-          t,
-          AppFilterChip(
-              label: 'Pendente', selected: false, onSelected: (_) {}));
-      final e = estiloDe(t, false);
+        t,
+        AppFilterChip(label: 'Pendente', selected: false, onSelected: (_) {}),
+      );
+      final e = pintado(t);
 
-      expect(e.fundo, isNot(Colors.white));
-      expect(e.fundo, isNot(AppColors.surface));
-      expect(e.fundo, AppColors.surfaceSubtle);
-      expect(contraste(e.fundo, AppColors.surface), greaterThan(1.0));
+      expect(e.texto, isNot(Colors.white));
+      expect(e.texto, AppColors.primary700);
+      expect(
+        contraste(e.texto, e.fundo),
+        greaterThan(7.0),
+        reason: 'texto do chip precisa ser confortável de ler (AAA)',
+      );
     });
 
-    testWidgets('borda visível', (t) async {
+    testWidgets('borda separa o chip do card branco', (t) async {
       await montar(
-          t,
-          AppFilterChip(
-              label: 'Pendente', selected: false, onSelected: (_) {}));
-      final e = estiloDe(t, false);
+        t,
+        AppFilterChip(label: 'Pendente', selected: false, onSelected: (_) {}),
+      );
+      final e = pintado(t);
 
       expect(e.borda.width, greaterThan(0));
       expect(e.borda.color, AppColors.borderStrong);
       expect(contraste(e.borda.color, AppColors.surface), greaterThan(1.3));
-    });
-
-    testWidgets('texto azul escuro, bem legível', (t) async {
-      await montar(
-          t,
-          AppFilterChip(
-              label: 'Pendente', selected: false, onSelected: (_) {}));
-      final e = estiloDe(t, false);
-
-      expect(e.texto, AppColors.primary700);
-      expect(contraste(e.texto, e.fundo), greaterThan(7.0),
-          reason: 'texto do chip precisa ser confortável de ler');
     });
   });
 
   group('selecionado', () {
     testWidgets('fundo primary com texto branco', (t) async {
       await montar(
-          t,
-          AppFilterChip(
-              label: 'Pendente', selected: true, onSelected: (_) {}));
-      final e = estiloDe(t, true);
+        t,
+        AppFilterChip(label: 'Pendente', selected: true, onSelected: (_) {}),
+      );
+      final e = pintado(t);
 
       expect(e.fundo, AppColors.primary);
       expect(e.texto, Colors.white);
@@ -101,26 +98,98 @@ void main() {
 
     testWidgets('cor do status é respeitada quando informada', (t) async {
       await montar(
-          t,
-          AppFilterChip(
-            label: 'Atrasadas',
-            selected: true,
-            corSelecionado: AppColors.nonCompliant,
-            onSelected: (_) {},
-          ));
-      final e = estiloDe(t, true);
+        t,
+        AppFilterChip(
+          label: 'Atrasadas',
+          selected: true,
+          corSelecionado: AppColors.nonCompliant,
+          onSelected: (_) {},
+        ),
+      );
+      final e = pintado(t);
 
       expect(e.fundo, AppColors.nonCompliant);
       expect(contraste(e.texto, e.fundo), greaterThan(4.5));
     });
   });
 
+  group('independência do tema', () {
+    testWidgets('um chipTheme hostil não muda o chip', (t) async {
+      // Prova de que nada vem do tema: um ChipThemeData que pintaria tudo
+      // de branco sobre branco não altera uma vírgula do que é renderizado.
+      await t.pumpWidget(MaterialApp(
+        theme: AppTheme.lightTheme.copyWith(
+          chipTheme: const ChipThemeData(
+            backgroundColor: Colors.white,
+            labelStyle: TextStyle(color: Colors.white),
+            side: BorderSide.none,
+          ),
+        ),
+        home: Scaffold(
+          backgroundColor: AppColors.surface,
+          body: Center(
+            child: AppFilterChip(
+              label: 'Pendente',
+              selected: false,
+              onSelected: (_) {},
+            ),
+          ),
+        ),
+      ));
+      await t.pumpAndSettle();
+      final e = pintado(t);
+
+      expect(e.texto, AppColors.primary700);
+      expect(e.borda.width, greaterThan(0));
+      expect(contraste(e.texto, e.fundo), greaterThan(7.0));
+    });
+
+    testWidgets('não existe widget Chip na árvore', (t) async {
+      await montar(
+        t,
+        AppFilterChip(label: 'Pendente', selected: false, onSelected: (_) {}),
+      );
+      expect(find.byType(FilterChip), findsNothing);
+      expect(find.byType(ChoiceChip), findsNothing);
+      expect(find.byType(RawChip), findsNothing);
+    });
+  });
+
+  group('interação', () {
+    testWidgets('toque alterna a seleção', (t) async {
+      bool? recebido;
+      await montar(
+        t,
+        AppFilterChip(
+          label: 'Pendente',
+          selected: false,
+          onSelected: (v) => recebido = v,
+        ),
+      );
+      await t.tap(find.text('Pendente'));
+      expect(recebido, isTrue);
+    });
+
+    testWidgets('sem callback o chip não é tocável', (t) async {
+      await montar(
+        t,
+        const AppFilterChip(label: 'Pendente', selected: false),
+      );
+      expect(t.widget<InkWell>(find.byType(InkWell)).onTap, isNull);
+    });
+  });
+
   group('contagem', () {
     testWidgets('aparece junto do rótulo', (t) async {
       await montar(
-          t,
-          AppFilterChip(
-              label: 'Pendentes', selected: false, count: 4, onSelected: (_) {}));
+        t,
+        AppFilterChip(
+          label: 'Pendentes',
+          selected: false,
+          count: 4,
+          onSelected: (_) {},
+        ),
+      );
       expect(find.textContaining('Pendentes'), findsOneWidget);
       expect(find.textContaining('4'), findsOneWidget);
     });

@@ -262,56 +262,29 @@ class AppTheme {
         space: 0,
       ),
 
-      // ── Chips: status badges arredondados ─────────────────────────────────
-      // Contraste do chip resolvido AQUI, uma vez, para todo o app.
-      // Antes: sem cor de fundo e com side: BorderSide.none, o chip nao
-      // selecionado ficava branco sobre branco e sumia — nos dias da
-      // semana da tarefa personalizada e na lista de convites enviados.
+      // ── Chips ─────────────────────────────────────────────────────────────
+      // O chip de FILTRO do app não passa mais por aqui: é o AppFilterChip,
+      // que não usa widget Chip nenhum e define as próprias cores. Toda a
+      // configuração por estado (color/labelStyle/side com WidgetState) que
+      // existia neste bloco ficou órfã com essa mudança e foi removida — ela
+      // era a tentativa, nunca bem-sucedida, de dar contraste ao FilterChip.
+      //
+      // O que sobra atende apenas os Chip informativos e não selecionáveis
+      // (os filtros ativos da gestão de usuários), que só precisam de forma
+      // e legibilidade.
       chipTheme: ChipThemeData(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        // ATENCAO: no Material 3, FilterChip e ChoiceChip IGNORAM
-        // backgroundColor e selectedColor — quem vale e , um
-        // WidgetStateProperty. Era por isso que o chip continuava branco
-        // mesmo com backgroundColor definido: so a borda pegava.
         backgroundColor: AppColors.surfaceSubtle,
-        selectedColor: AppColors.primary,
-        checkmarkColor: Colors.white,
-        color: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.disabled)) {
-            return AppColors.background;
-          }
-          return states.contains(WidgetState.selected)
-              ? AppColors.primary
-              : AppColors.surfaceSubtle;
-        }),
-        // FilterChip e ChoiceChip usam labelStyle nos dois estados, entao
-        // a cor do texto precisa depender do estado selecionado — nao basta
-        // definir secondaryLabelStyle.
-        labelStyle: WidgetStateTextStyle.resolveWith((states) {
-          final selecionado = states.contains(WidgetState.selected);
-          return TextStyle(
-            fontFamily: fontBody,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: selecionado ? Colors.white : AppColors.textPrimary,
-          );
-        }),
-        secondaryLabelStyle: const TextStyle(
+        side: const BorderSide(color: AppColors.borderStrong, width: 0.8),
+        labelStyle: const TextStyle(
           fontFamily: fontBody,
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: Colors.white,
+          color: AppColors.textPrimary,
         ),
-        side: WidgetStateBorderSide.resolveWith((states) {
-          final selecionado = states.contains(WidgetState.selected);
-          return BorderSide(
-            color: selecionado ? AppColors.primary : AppColors.borderStrong,
-            width: 0.8,
-          );
-        }),
       ),
 
       // ── Dialog ────────────────────────────────────────────────────────────
