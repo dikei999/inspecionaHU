@@ -107,6 +107,12 @@ class OfflineSyncService {
   /// respondeu de verdade.
   static Future<bool> get isOnline async {
     if (!await _temInterfaceDeRede) return false;
+    // Web: dart:io.HttpClient não existe nesse alvo (lança em runtime) e o
+    // navegador já resolve sua própria prova de vida via CORS/bloqueios que
+    // não refletem conectividade real — a prova HTTP abaixo é só para os
+    // alvos com dart:io de verdade (Android). Na web, a interface de rede
+    // do próprio navegador já é a informação confiável disponível.
+    if (kIsWeb) return true;
     try {
       final client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 4);

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
@@ -18,6 +19,11 @@ class ConnectionBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Web: connectivity_plus não é confiável nesse alvo e o navegador já
+    // sinaliza ausência de rede por conta própria — a faixa só tem função
+    // real no Android, onde serve o inspetor em campo.
+    if (kIsWeb) return child;
+
     return Column(
       children: [
         SafeArea(
