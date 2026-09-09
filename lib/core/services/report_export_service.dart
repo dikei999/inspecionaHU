@@ -170,6 +170,8 @@ class ReportExportService {
     final doc = pw.Document(
       title: 'Relatório de Inspeção NR-32 — ${data.checklistTitle}',
       author: 'InspecionaHU',
+      // Fontes embutidas: acentos, travessão e ponto médio saem corretos.
+      theme: await _carregarTema(),
     );
 
     final generatedAt = _dateFmt.format(DateTime.now());
@@ -213,6 +215,38 @@ class ReportExportService {
     );
 
     return doc.save();
+  }
+
+  /// Tema tipográfico do PDF, com as fontes TTF do próprio projeto.
+  ///
+  /// Sem isto o pacote pdf usa a Helvetica embutida, que NÃO tem glifo para
+  /// o travessão (—) nem para o ponto médio (·): os dois saíam como
+  /// quadrado com X na coluna Foto e no cabeçalho da Base normativa.
+  /// Manrope para corpo, Sora para títulos — as mesmas do app.
+  static pw.ThemeData? _tema;
+
+  static Future<pw.ThemeData> _carregarTema() async {
+    if (_tema != null) return _tema!;
+
+    final manropeRegular = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/Manrope-Regular.ttf'));
+    final manropeBold =
+        pw.Font.ttf(await rootBundle.load('assets/fonts/Manrope-Bold.ttf'));
+    final soraBold =
+        pw.Font.ttf(await rootBundle.load('assets/fonts/Sora-Bold.ttf'));
+
+    _tema = pw.ThemeData.withFont(
+      base: manropeRegular,
+      bold: manropeBold,
+      // Itálico não é usado no relatório; apontar para a regular evita que
+      // o pacote caia na Helvetica e volte a perder glifos.
+      italic: manropeRegular,
+      boldItalic: manropeBold,
+      // Sora entra como fallback: se algum glifo faltar na Manrope, o
+      // pacote busca aqui antes de recorrer à Helvetica embutida.
+      fontFallback: [soraBold, manropeRegular],
+    );
+    return _tema!;
   }
 
   /// Carrega um asset opcional. Devolve null se nao estiver no bundle.
