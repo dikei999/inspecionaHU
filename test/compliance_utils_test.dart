@@ -68,4 +68,50 @@ void main() {
           reason: 'gráfico e número precisam sair da mesma conta');
     });
   });
+
+  // ── C3: a taxa GRAVADA e a taxa EXIBIDA sao a mesma conta ──────────────
+  //
+  // A tela de resposta calculava, ao enviar a inspecao,
+  //     compliant / _items.length * 100
+  // ou seja, com os NA no denominador. Os paineis e o donut usam
+  // C/(C+NC). O mesmo relatorio aparecia com dois numeros diferentes
+  // conforme a tela em que era olhado.
+  group('C3 — NA nunca entra no denominador', () {
+    test('metade NA: a formula antiga dava 50%, a correta da 100%', () {
+      const c = 5, nc = 0, na = 5;
+      final antiga = c / (c + nc + na) * 100; // o que era gravado
+      final correta = ComplianceUtils.taxa(compliant: c, nonCompliant: nc);
+
+      expect(antiga, 50.0);
+      expect(correta, 100.0,
+          reason: 'sem NC alguma, a conformidade e total');
+      expect(correta, isNot(antiga),
+          reason: 'e exatamente esta divergencia que C3 elimina');
+    });
+
+    test('so NA devolve zero, sem divisao por zero', () {
+      expect(ComplianceUtils.taxa(compliant: 0, nonCompliant: 0), 0);
+    });
+
+    test('sem NA as duas formulas coincidem', () {
+      const c = 8, nc = 2;
+      expect(
+        ComplianceUtils.taxa(compliant: c, nonCompliant: nc),
+        c / (c + nc) * 100,
+      );
+    });
+
+    test('agregar e taxa concordam no mesmo conjunto', () {
+      final r = ComplianceUtils.agregar([
+        {'compliant': 5, 'non_compliant': 0, 'not_applicable': 5},
+        {'compliant': 3, 'non_compliant': 1, 'not_applicable': 2},
+      ]);
+      expect(
+        r.taxa,
+        ComplianceUtils.taxa(
+            compliant: r.compliant, nonCompliant: r.nonCompliant),
+      );
+      expect(r.notApplicable, 7, reason: 'NA e contado, mas fora da taxa');
+    });
+  });
 }

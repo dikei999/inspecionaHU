@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../core/constants/app_colors.dart';
+import '../core/utils/compliance_utils.dart';
 
 /// Card branco padronizado para abrigar um gráfico de dashboard.
 class ChartCard extends StatelessWidget {
@@ -75,11 +76,12 @@ class ComplianceDonut extends StatelessWidget {
     this.light = false,
   });
 
-  double get _rate {
-    final total = compliant + nonCompliant;
-    if (total == 0) return 0;
-    return compliant / total * 100;
-  }
+  /// Fonte unica: ComplianceUtils (C3). A formula estava reimplementada
+  /// aqui — igual, mas duplicada.
+  double get _rate => ComplianceUtils.taxa(
+        compliant: compliant,
+        nonCompliant: nonCompliant,
+      );
 
   @override
   Widget build(BuildContext context) {

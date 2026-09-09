@@ -11,6 +11,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 
 import '../constants/nr32_clauses.dart';
+import '../utils/compliance_utils.dart';
 import '../models/checklist_item.dart';
 import '../models/inspection.dart';
 import '../models/inspection_response.dart';
@@ -41,11 +42,13 @@ class ReportExportData {
   int get nonCompliant => responses.where((r) => r.status == 'NC').length;
   int get notApplicable => responses.where((r) => r.status == 'NA').length;
 
-  double get complianceRate {
-    final total = compliant + nonCompliant;
-    if (total == 0) return 0;
-    return compliant / total * 100;
-  }
+  /// Fonte unica: ComplianceUtils. A formula era reimplementada aqui —
+  /// correta, mas duplicada. Uma copia a mais e uma chance a mais de
+  /// divergir na proxima mudanca (C3).
+  double get complianceRate => ComplianceUtils.taxa(
+        compliant: compliant,
+        nonCompliant: nonCompliant,
+      );
 
   /// Respostas ordenadas pelo order_index do item do checklist,
   /// com desempate por checklistItemId (ordem deterministica).
