@@ -62,10 +62,31 @@ BEGIN
   -- ── 1. Fotos no Storage ────────────────────────────────────
   -- O path é {hospital_id}/{inspection_id}/{uuid}.jpg, então o
   -- prefixo do hospital demo isola tudo que será removido.
-  DELETE FROM storage.objects
-  WHERE bucket_id = 'inspection-photos'
-    AND name LIKE v_hospital_id::text || '/%';
-  GET DIAGNOSTICS v_fotos = ROW_COUNT;
+  --
+  -- ATENÇÃO (corrigido set/2026): o Supabase passou a BLOQUEAR o
+  -- DELETE direto em storage.objects, com a mensagem
+  --   "Direct deletion from storage tables is not allowed.
+  --    Use the Storage API instead."  (SQLSTATE 42501)
+  -- Como este era o PRIMEIRO comando da função, o erro abortava a
+  -- transação inteira e NADA era apagado: o botão "Limpar dados
+  -- demo" falhava por completo, em silêncio para quem só via o
+  -- SnackBar de erro.
+  --
+  -- Agora a remoção das fotos é tentada dentro de um bloco próprio.
+  -- Se o servidor recusar, a limpeza dos DADOS continua e o retorno
+  -- informa que as fotos precisam sair pela Storage API — que é
+  -- exatamente o que o app faz, pelo botão do Painel Demo.
+  BEGIN
+    DELETE FROM storage.objects
+    WHERE bucket_id = 'inspection-photos'
+      AND name LIKE v_hospital_id::text || '/%';
+    GET DIAGNOSTICS v_fotos = ROW_COUNT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      -- -1 sinaliza "não foi possível apagar aqui", diferente de 0
+      -- ("não havia foto"). O app trata os dois casos.
+      v_fotos := -1;
+  END;
 
   -- ── 2. Respostas de inspeção ───────────────────────────────
   DELETE FROM inspection_responses ir
@@ -132,6 +153,18 @@ BEGIN
     AND t.hospital_id = v_hospital_id;
 
   DELETE FROM checklist_templates WHERE hospital_id = v_hospital_id;
+
+  -- ── 12. Convites do hospital demo ──────────────────────────
+  -- Faltava: um convite pendente sobrevivia a limpeza e reaparecia
+  -- na tela de convites depois de repovoar, como resto da rodada
+  -- anterior. A tabela e verificada antes porque nao esta no
+  -- supabase_setup.sql (foi criada a parte).
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'invitations'
+  ) THEN
+    DELETE FROM invitations WHERE hospital_id = v_hospital_id;
+  END IF;
 
   RETURN json_build_object(
     'status', 'ok',

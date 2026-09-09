@@ -155,15 +155,66 @@ class _PainelDemoScreenState extends State<PainelDemoScreen> {
       final setores = map['setores'] as int? ?? 0;
       final checklists = map['checklists'] as int? ?? 0;
       final inspecoes = map['inspecoes'] as int? ?? 0;
-      final fotos = map['fotos_storage'] as int? ?? 0;
+      var fotos = map['fotos_storage'] as int? ?? 0;
+
+      // fotos_storage == -1 significa que o banco NÃO conseguiu apagar
+      // as fotos: o Supabase bloqueia DELETE direto em storage.objects
+      // ("Use the Storage API instead"). Nesse caso a limpeza dos dados
+      // já aconteceu e as fotos saem por aqui, pela API, que é o
+      // caminho permitido.
+      if (fotos < 0) {
+        fotos = await _limparFotosDemo();
+      }
+
       _snack('Ambiente demo limpo: $setores setor(es), $checklists '
           'checklist(s), $inspecoes inspeção(ões) e $fotos foto(s).');
     } on PostgrestException catch (e) {
-      _snack(e.message, error: true);
-    } catch (_) {
-      _snack('Erro ao limpar dados demo.', error: true);
+      debugPrint('[PainelDemo] limpar: ${e.message}');
+      _snack('Não foi possível limpar o ambiente demo. Tente novamente.',
+          error: true);
+    } catch (e) {
+      debugPrint('[PainelDemo] limpar: $e');
+      _snack('Não foi possível limpar o ambiente demo. Tente novamente.',
+          error: true);
     } finally {
       if (mounted) setState(() => _wiping = false);
+    }
+  }
+
+  /// Apaga as fotos do hospital demo pela Storage API.
+  ///
+  /// O prefixo do caminho é o hospital_id, então a varredura é limitada
+  /// ao HU-DEMO — nenhuma foto de outra unidade é alcançada. Devolve
+  /// quantos arquivos foram removidos.
+  Future<int> _limparFotosDemo() async {
+    try {
+      final hospital = await _db
+          .from('hospitals')
+          .select('id')
+          .eq('sigla', 'HU-DEMO')
+          .maybeSingle();
+      final hospitalId = hospital?['id'] as String?;
+      if (hospitalId == null) return 0;
+
+      final bucket = _db.storage.from('inspection-photos');
+      final caminhos = <String>[];
+
+      // A estrutura é {hospital_id}/{inspection_id}/{uuid}.jpg: uma
+      // varredura por inspeção, sem listar o bucket inteiro.
+      final pastas = await bucket.list(path: hospitalId);
+      for (final pasta in pastas) {
+        final arquivos = await bucket.list(path: '$hospitalId/${pasta.name}');
+        for (final a in arquivos) {
+          caminhos.add('$hospitalId/${pasta.name}/${a.name}');
+        }
+      }
+
+      if (caminhos.isEmpty) return 0;
+      await bucket.remove(caminhos);
+      return caminhos.length;
+    } catch (e) {
+      debugPrint('[PainelDemo] limpar fotos: $e');
+      return 0;
     }
   }
 
