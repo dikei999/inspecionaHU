@@ -1764,28 +1764,28 @@ class _EquipeTabState extends State<_EquipeTab> {
 
   @override
   Widget build(BuildContext context) {
+    // Sem FAB nesta aba: o botão flutuante "Vincular Inspetor" ficava
+    // sobreposto à lista de convites enviados no fim da rolagem — um
+    // padding de folga (120, comentado abaixo) tentou compensar antes e
+    // não resolveu, porque o FAB é POSICIONADO SOBRE o conteúdo, não
+    // reservado dentro do layout. A ação virou botão no cabeçalho da
+    // seção "Inspetores vinculados", junto de "Convidar" — mesmo padrão
+    // já usado em "Acesso compartilhado" (botão "Conceder").
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: widget.canEdit
-          ? FloatingActionButton.extended(
-              heroTag: 'fab_equipe_setor',
-              onPressed: _vincularInspetores,
-              icon: const Icon(Icons.person_add_alt_1),
-              label: const Text('Vincular Inspetor'),
-            )
-          : null,
       body: _loading
           ? const SkeletonList(itemHeight: 72)
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
-                // Folga no fim para o botão flutuante não cobrir a última
-                // seção — 88 não bastava com a lista de convites embaixo.
+                // Folga no fim da rolagem: com o FAB removido não é mais
+                // para não ficar coberto por ele, é só respiro visual
+                // depois da última seção.
                 padding: const EdgeInsets.fromLTRB(
                     AppDimensions.screenPadding,
                     AppDimensions.screenPadding,
                     AppDimensions.screenPadding,
-                    120),
+                    32),
                 children: [
                   Text(
                     'Supervisor responsável',
@@ -1830,9 +1830,24 @@ class _EquipeTabState extends State<_EquipeTab> {
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                       ),
-                      // Convidar alguém JÁ vinculado a este setor: é o
-                      // convite do setor, não o genérico do hospital.
-                      if (widget.canEdit)
+                      // Duas ações distintas, as duas cabem no cabeçalho
+                      // (item 3): "Vincular" é o inspetor que já tem conta
+                      // no hospital — era o antigo FAB, que sobrepunha a
+                      // lista de convites no fim da rolagem. "Convidar" é
+                      // gente nova, que ainda não tem cadastro.
+                      if (widget.canEdit) ...[
+                        TextButton.icon(
+                          onPressed: _vincularInspetores,
+                          icon: const Icon(Icons.person_add_alt_1, size: 16),
+                          label: const Text('Vincular'),
+                          style: TextButton.styleFrom(
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 6),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
                         TextButton.icon(
                           onPressed: () async {
                             await context.push(
@@ -1840,7 +1855,7 @@ class _EquipeTabState extends State<_EquipeTab> {
                                     widget.sector.id));
                             if (context.mounted) _load();
                           },
-                          icon: const Icon(Icons.person_add_alt_1, size: 16),
+                          icon: const Icon(Icons.mail_outline, size: 16),
                           label: const Text('Convidar'),
                           style: TextButton.styleFrom(
                             minimumSize: Size.zero,
@@ -1849,6 +1864,7 @@ class _EquipeTabState extends State<_EquipeTab> {
                                 horizontal: 8, vertical: 6),
                           ),
                         ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 8),
